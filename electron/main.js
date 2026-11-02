@@ -594,13 +594,14 @@ function setupUpdater() {
   if (!app.isPackaged) return;
   try {
     const { autoUpdater } = require('electron-updater');
+    // Télécharge en silence, installe seulement à la fermeture — pas de relance forcée
+    // (évite que l’antivirus bloque un Setup.exe lancé automatiquement).
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = { info: log, warn: log, error: log };
     autoUpdater.on('update-downloaded', () => {
       backupProfile();
-      log('Mise à jour téléchargée — installation automatique');
-      autoUpdater.quitAndInstall(false, true);
+      log('Mise à jour téléchargée — sera appliquée à la prochaine fermeture');
     });
     autoUpdater.on('error', (err) => log(`updater ${err.message}`));
     const tick = () => {
