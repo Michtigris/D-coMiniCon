@@ -203,7 +203,12 @@ function raiseChat() {
   tellBar();
 }
 
+function windowsReady() {
+  return !!(chat && !chat.isDestroyed() && bar && !bar.isDestroyed());
+}
+
 function layout(x, y) {
+  if (!windowsReady()) return;
   const pos = clamp(x, y);
   if (chatVisible) {
     if (openUp) {
@@ -215,7 +220,7 @@ function layout(x, y) {
     }
     if (!chat.isVisible()) chat.showInactive();
   } else {
-    if (chat && !chat.isDestroyed()) chat.hide();
+    chat.hide();
     bar.setBounds({ x: pos.x, y: pos.y, width: W, height: BAR_H });
   }
   if (!bar.isVisible()) bar.showInactive();
@@ -397,8 +402,9 @@ function stashApp() {
 }
 
 function revealApp() {
-  if (!stashed && bar && !bar.isDestroyed() && bar.isVisible()) {
-    if (chatVisible && chat && !chat.isDestroyed()) {
+  if (!windowsReady()) return;
+  if (!stashed && bar.isVisible()) {
+    if (chatVisible) {
       raiseChat();
       chat.show();
       chat.focus();
@@ -410,16 +416,14 @@ function revealApp() {
   stashed = false;
   const pos = savedPosition();
   layout(pos.x, pos.y);
-  if (bar && !bar.isDestroyed()) {
-    bar.show();
-    bar.setAlwaysOnTop(true, 'screen-saver');
-  }
-  if (chatVisible && chat && !chat.isDestroyed()) {
+  bar.show();
+  bar.setAlwaysOnTop(true, 'screen-saver');
+  if (chatVisible) {
     raiseChat();
     chat.show();
     chat.focus();
     chat.webContents.send('notify:click', {});
-  } else if (chat && !chat.isDestroyed()) {
+  } else {
     chat.hide();
   }
   if (tray) tray.setToolTip('DécoMiniCon — ANGE pour afficher si rangée');

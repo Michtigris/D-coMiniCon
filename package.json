@@ -1,7 +1,7 @@
 {
   "name": "decominicon",
   "productName": "DécoMiniCon",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Conversation discrète : s’ouvre avec A N G E, sans raccourci bureau.",
   "main": "electron/main.js",
