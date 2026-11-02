@@ -1,0 +1,85 @@
+{
+  "name": "decominicon",
+  "productName": "DécoMiniCon",
+  "version": "0.1.2",
+  "private": true,
+  "description": "Conversation discrète : s’ouvre avec A N G E, sans raccourci bureau.",
+  "main": "electron/main.js",
+  "author": "DécoMiniCon",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Michtigris/D-coMiniCon.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/index.js",
+    "dev": "node scripts/dev.js",
+    "test": "node server/selftest.js",
+    "dist": "electron-builder --win"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "koffi": "3.3.3",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "fr.decominicon.app",
+    "productName": "DécoMiniCon",
+    "asar": true,
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/koffi/**"
+    ],
+    "compression": "maximum",
+    "electronLanguages": ["fr", "en-US"],
+    "artifactName": "Decominicon-Setup-${version}.${ext}",
+    "directories": {
+      "output": "build",
+      "buildResources": "assets"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "!server/data/**",
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis"
+      ],
+      "signExecutable": false
+    },
+    "nsis": {
+      "unicode": true,
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
+      "runAfterFinish": false,
+      "deleteAppDataOnUninstall": false,
+      "include": "installer.nsh",
+      "installerLanguages": [
+        "fr_FR"
+      ],
+      "language": 1036,
+      "displayLanguageSelector": false,
+      "shortcutName": "DécoMiniCon"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Michtigris",
+        "repo": "D-coMiniCon"
+      }
+    ]
+  }
+}

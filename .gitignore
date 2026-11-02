@@ -1,0 +1,6 @@
+node_modules/
+dist/
+build/
+server/data/*.json
+server/data/*.tmp
+*.log
