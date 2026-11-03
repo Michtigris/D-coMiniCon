@@ -1,7 +1,7 @@
 const app = document.getElementById('app');
 
 app.innerHTML = `
-  <button type="button" class="buddy bar-logo" id="logo" title="Glisser · double-clic = Masquer · clic droit = menu" aria-label="DécoMiniCon">
+  <button type="button" class="buddy bar-logo" id="logo" title="Glisser · clic droit = conversation · double-clic = Masquer" aria-label="DécoMiniCon">
     <span class="buddy-stage">
       <span class="buddy-top"></span>
       <span class="buddy-bottom"></span>
@@ -59,7 +59,7 @@ logo.addEventListener('pointerleave', () => {
 logo.addEventListener('pointerdown', (event) => {
   if (event.button === 2) {
     event.preventDefault();
-    window.deco.popupMenu();
+    window.deco.toggleChat();
     return;
   }
   if (event.button !== 0) return;
@@ -76,7 +76,6 @@ logo.addEventListener('dblclick', (event) => {
 
 logo.addEventListener('contextmenu', (event) => {
   event.preventDefault();
-  window.deco.popupMenu();
 });
 
 window.deco.on('badge', (info) => {
