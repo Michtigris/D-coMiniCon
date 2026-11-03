@@ -111,25 +111,16 @@ function shell() {
   app.innerHTML = `
     <div class="shell">
       <header class="top" id="drag">
-        <div>
-          <div class="brand-row">
-            <button type="button" class="buddy" id="buddy" title="Passe sur moi !" aria-label="Faire parler la mascotte">
-              <span class="buddy-stage">
-                <span class="buddy-top"></span>
-                <span class="buddy-bottom"></span>
-              </span>
-            </button>
-            <div class="brand">DécoMiniCon</div>
-            <span class="app-version" id="app-version"></span>
-          </div>
-          <div class="tag" id="tagline">Petite conversation</div>
+        <div class="brand-row">
+          <div class="brand">DécoMiniCon</div>
+          <span class="app-version" id="app-version"></span>
+          <span class="tag" id="tagline"></span>
         </div>
         <div class="top-actions">
           <button type="button" class="icon-btn" id="gear" aria-label="Réglages">⚙</button>
           <button type="button" class="icon-btn" id="min" aria-label="Cacher la fenêtre">–</button>
         </div>
       </header>
-      <div class="rule" aria-hidden="true"><i></i></div>
       <div id="statusline" class="statusline" hidden></div>
       <div id="call" class="call" hidden></div>
       <main id="body"></main>
@@ -137,30 +128,27 @@ function shell() {
       <form id="settings" class="settings" hidden>
         <div class="section">Compte</div>
         <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
-        <label>Mot de passe <input name="password" type="password" maxlength="64" placeholder="Laisser vide pour ne pas changer" autocomplete="new-password" /></label>
+        <label>Mdp <input name="password" type="password" maxlength="64" placeholder="Inchangé si vide" autocomplete="new-password" /></label>
         <p class="hint" id="settings-feedback" hidden></p>
         <div id="server-settings" hidden>
           <div class="section">Serveur</div>
-          <label>Adresse <input name="server" placeholder="ex. 192.168.1.20:3847" /></label>
+          <label>Adresse <input name="server" placeholder="IP:3847" /></label>
           <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
         </div>
         <div id="share-settings"></div>
         <div id="open-combo-settings" hidden>
-          <div class="section">Ouverture secrète</div>
+          <div class="section">Ouverture</div>
           <label>Mot-clé <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" /></label>
-          <p class="hint" id="combo-hint">Par défaut ANGE. Silence 0,5 s avant et après. Temps max : 0,5 + 0,4 × lettres.</p>
+          <p class="hint" id="combo-hint"></p>
         </div>
         <div id="size-settings" hidden>
-          <div class="section">Taille de l’appli</div>
+          <div class="section">Taille</div>
           <label class="size-slider">
-            Affichage
             <input name="uiSize" type="range" min="0" max="3" step="1" />
             <span id="size-label">Normale</span>
           </label>
-          <p class="hint">Petite · Moyenne · Normale · Grande</p>
         </div>
-        <button type="submit" class="primary">Enregistrer</button>
-        <p class="hint" id="version"></p>
+        <button type="submit" class="primary">OK</button>
         <button type="button" class="ghost" id="close-settings">Fermer</button>
       </form>
     </div>
@@ -173,7 +161,6 @@ function shell() {
   document.getElementById('min').onclick = () => window.deco.toggleChat();
   document.getElementById('settings').onsubmit = saveSettings;
   document.getElementById('close-settings').onclick = () => closeSettings();
-  bindBuddy(document.getElementById('buddy'));
   window.addEventListener('focus', () => {
     state.unread = 0;
     pushBadge();
@@ -257,20 +244,19 @@ function renderChrome() {
   const view = currentView();
   if (tag) {
     if (view === 'chat' && state.partner) {
-      tag.textContent = `${state.partner.pseudo} · ${state.partner.online ? 'en ligne' : 'hors ligne'}`;
+      tag.textContent = state.partner.online ? state.partner.pseudo : `${state.partner.pseudo} · off`;
     } else if (view === 'salon') {
-      const count = state.users.filter((user) => user.online).length;
-      tag.textContent = count > 1 ? `${count} dans le salon` : 'Le salon';
+      tag.textContent = 'Salon';
     } else if (state.profile?.pseudo && state.profile?.token) {
-      tag.textContent = 'Choisir un serveur';
+      tag.textContent = 'Serveur';
     } else {
-      tag.textContent = 'Créer ton compte';
+      tag.textContent = 'Compte';
     }
   }
   const line = document.getElementById('statusline');
   if (line) {
     line.hidden = state.status === 'online' || state.status === 'setup' || state.status === 'boot';
-    line.textContent = state.status === 'connecting' ? 'Connexion au salon…' : 'Hors ligne — reconnexion au salon…';
+    line.textContent = state.status === 'connecting' ? 'Connexion…' : 'Hors ligne…';
   }
   renderCall();
   const foot = document.getElementById('foot');
@@ -343,12 +329,10 @@ function mountSetup() {
 
   if (!hasAccount) {
     form.innerHTML = `
-      <p class="intro">Crée ton compte (pseudo + mot de passe). Ensuite tu choisiras un serveur.</p>
-      <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Par exemple Sam" autocomplete="username" /></label>
-      <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="Au moins 4 caractères" autocomplete="new-password" /></label>
-      <p class="hint">Même compte sur plusieurs PC : même pseudo + même mot de passe.</p>
+      <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Pseudo" autocomplete="username" /></label>
+      <label>Mdp <input name="password" type="password" maxlength="64" required placeholder="Mot de passe" autocomplete="new-password" /></label>
       <p class="error" id="setup-error"></p>
-      <button type="submit" class="primary">Créer ou se connecter</button>
+      <button type="submit" class="primary">OK</button>
     `;
     body.replaceChildren(form);
     form.querySelector('#setup-error').textContent = state.setupError || '';
@@ -363,13 +347,11 @@ function mountSetup() {
   }
 
   form.innerHTML = `
-    <p class="intro">Compte <strong>${escapeHtml(state.profile.pseudo)}</strong> prêt. Entre l’adresse du serveur pour rejoindre le salon.</p>
-    <label>Adresse du serveur <input name="server" required placeholder="ex. 192.168.1.20:3847" /></label>
-    <label>Code (optionnel) <input name="code" maxlength="24" placeholder="Si le serveur en demande un" /></label>
-    <p class="hint">Ce n’est pas ton compte : c’est juste où te connecter.</p>
+    <label>Serveur <input name="server" required placeholder="IP:3847" /></label>
+    <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
     <p class="error" id="setup-error"></p>
-    <button type="submit" class="primary">Rejoindre le serveur</button>
-    <button type="button" class="ghost" id="host-now">Salon temporaire LAN (ce PC)</button>
+    <button type="submit" class="primary">Rejoindre</button>
+    <button type="button" class="ghost" id="host-now">Héberger LAN</button>
   `;
   body.replaceChildren(form);
   form.server.value = state.profile?.serverUrl || 'http://127.0.0.1:3847';
@@ -409,7 +391,7 @@ async function createAccount({ pseudo, password }) {
   });
   state.setupError = '';
   state.forceSetup = true;
-  toast('Compte créé. Choisis un serveur.');
+  toast('Compte OK');
   mountSetup();
 }
 
@@ -462,7 +444,7 @@ function fillSalon() {
     const share = document.createElement('div');
     share.className = 'share';
     const p = document.createElement('p');
-    p.textContent = `Salon temporaire LAN : ${state.host.urls.join(' · ')}`;
+    p.textContent = state.host.urls[0] || '';
     const row = document.createElement('div');
     row.className = 'row';
     row.append(actionButton('Copier', () => window.deco.copy(state.host.urls[0])));
@@ -474,8 +456,8 @@ function fillSalon() {
     back.type = 'button';
     back.className = 'back-link';
     back.textContent = state.activeGroup
-      ? `Revenir à ${state.activeGroup.name}`
-      : `Revenir à ${state.partner.pseudo}`;
+      ? `← ${state.activeGroup.name}`
+      : `← ${state.partner.pseudo}`;
     back.onclick = () => {
       state.browsing = false;
       renderBody();
@@ -490,16 +472,16 @@ function fillSalon() {
 
   const add = document.createElement('form');
   add.className = 'composer';
-  add.innerHTML = '<input name="pseudo" maxlength="16" placeholder="Pseudo d’un ami…" /><button type="submit">Ajouter</button>';
+  add.innerHTML = '<input name="pseudo" maxlength="16" placeholder="Ami…" /><button type="submit">+</button>';
   add.onsubmit = (event) => {
     event.preventDefault();
     const pseudo = add.pseudo.value.trim();
     if (!pseudo) return;
     net?.send({ type: 'friend:request', payload: { pseudo } });
     add.pseudo.value = '';
-    toast('Demande envoyée si le compte existe.');
+    toast('Envoyé');
   };
-  root.append(sectionTitle('Ajouter un ami'), add);
+  root.append(sectionTitle('Ami'), add);
 
   if (state.incoming.length) {
     root.append(sectionTitle('Demandes'));
@@ -516,9 +498,9 @@ function fillSalon() {
   create.className = 'setup';
   create.style.padding = '0';
   create.innerHTML = `
-    <label>Nouveau groupe <input name="name" maxlength="32" placeholder="Nom du groupe" required /></label>
+    <label>Groupe <input name="name" maxlength="32" placeholder="Nom" required /></label>
     <div id="group-picks"></div>
-    <button type="submit" class="primary">Créer le groupe</button>
+    <button type="submit" class="primary">Créer</button>
   `;
   const picks = create.querySelector('#group-picks');
   for (const friend of friends) {
@@ -527,38 +509,21 @@ function fillSalon() {
     label.innerHTML = `<input type="checkbox" value="${friend.id}" /> ${friend.pseudo}`;
     picks.append(label);
   }
-  if (!friends.length) {
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = 'Ajoute des amis avant de créer un groupe.';
-    picks.append(hint);
-  }
   create.onsubmit = (event) => {
     event.preventDefault();
     const memberIds = [...create.querySelectorAll('#group-picks input:checked')].map((input) => input.value);
     net?.send({ type: 'group:create', payload: { name: create.name.value.trim(), memberIds } });
     create.name.value = '';
-    toast('Groupe créé.');
+    toast('OK');
   };
   root.append(create);
-  if (state.groups.length) {
-    for (const group of state.groups) root.append(groupRow(group));
-  } else {
-    const empty = document.createElement('p');
-    empty.className = 'empty';
-    empty.textContent = 'Aucun groupe pour l’instant.';
-    root.append(empty);
-  }
+  for (const group of state.groups) root.append(groupRow(group));
 
   const others = state.users.filter((user) => user.id !== state.me.id && !friends.some((friend) => friend.id === user.id));
-  root.append(sectionTitle('En ligne sur le serveur'));
-  if (!others.length && !friends.length) {
-    const empty = document.createElement('p');
-    empty.className = 'empty';
-    empty.textContent = 'Personne d’autre connecté. Ajoute un ami par pseudo ou attends qu’il se connecte.';
-    root.append(empty);
+  if (others.length) {
+    root.append(sectionTitle('En ligne'));
+    for (const user of others) root.append(personRow(user, 'other'));
   }
-  for (const user of others) root.append(personRow(user, 'other'));
 }
 
 function groupRow(group) {
@@ -1166,14 +1131,15 @@ function openSettings() {
   updateComboHint(form.openCombo.value);
   form.openCombo.oninput = () => updateComboHint(form.openCombo.value);
   bindSizeSlider(form);
-  document.getElementById('version').textContent = `Compte ${state.profile.pseudo || '—'} · multi-PC OK · v${state.version}`;
   const share = document.getElementById('share-settings');
-  share.replaceChildren();
-  if (state.host?.hosting && state.host.urls?.length) {
-    const p = document.createElement('p');
-    p.className = 'hint';
-    p.textContent = `Salon LAN temporaire : ${state.host.urls.join(' · ')}`;
-    share.append(p);
+  if (share) {
+    share.replaceChildren();
+    if (state.host?.hosting && state.host.urls?.length) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = state.host.urls[0] || '';
+      share.append(p);
+    }
   }
   window.deco.saveProfile({ settingsOpen: true }).then((profile) => {
     state.profile = profile;
@@ -1186,7 +1152,7 @@ function updateComboHint(raw) {
   const word = String(raw || 'ANGE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'ANGE';
   const n = Math.max(2, Math.min(16, word.length));
   const win = (0.5 + 0.4 * n).toFixed(1).replace('.', ',');
-  el.textContent = `Mot « ${word} » → ${win} s max pour le taper, 0,5 s de silence avant et après.`;
+  el.textContent = `${word} · ${win}s`;
 }
 
 const UI_SIZE_ORDER = ['small', 'medium', 'normal', 'large'];

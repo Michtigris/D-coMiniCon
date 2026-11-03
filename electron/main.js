@@ -12,8 +12,8 @@ if (!gotLock) {
   app.quit();
 }
 
-const BASE_W = 328;
-const BASE_CHAT_H = 492;
+const BASE_W = 280;
+const BASE_CHAT_H = 340;
 const BASE_BAR = 96;
 const BASE_BAR_EXPANDED = 240;
 const UI_SIZE_SCALES = { small: 0.5, medium: 0.75, normal: 1, large: 1.5 };

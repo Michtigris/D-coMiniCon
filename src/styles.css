@@ -52,28 +52,37 @@ button:focus-visible,
 
 .top {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px 4px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 2px;
 }
 .brand-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 .brand {
   font-family: Fredoka, "Segoe UI", sans-serif;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--cyan);
 }
 .app-version {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--muted);
+}
+.tag {
+  color: var(--muted);
+  font-size: 10px;
+  margin: 0;
+  letter-spacing: 0.02em;
 }
 
 /* Mascotte Canadiens South Park : monte + décale + rotate (alterne G/D) */
@@ -164,13 +173,7 @@ button:focus-visible,
 .buddy:not(.talking) .buddy-top {
   transform: translate(0, 0) rotate(0deg);
 }
-.tag {
-  color: var(--muted);
-  font-size: 11px;
-  margin-top: 3px;
-  letter-spacing: 0.02em;
-}
-.top-actions { margin-left: auto; display: flex; gap: 6px; }
+.top-actions { margin-left: auto; display: flex; gap: 4px; flex-shrink: 0; }
 
 .icon-btn, .text-btn, .mini, .primary, .cam, .ghost, .composer button {
   border: 1px solid var(--cyan);
@@ -188,10 +191,11 @@ button:focus-visible,
   box-shadow: var(--glow-cyan);
 }
 .icon-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   clip-path: none;
+  font-size: 12px;
 }
 .primary, .mini.primary, .composer button {
   background: var(--magenta);
@@ -270,18 +274,18 @@ button:focus-visible,
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 12px 10px;
-  gap: 8px;
+  padding: 0 8px 8px;
+  gap: 6px;
 }
-.setup { overflow: auto; }
-.intro, .hint, .empty, .error { margin: 0; color: var(--muted); font-size: 12px; }
+.setup { overflow: auto; gap: 8px; }
+.intro, .hint, .empty, .error { margin: 0; color: var(--muted); font-size: 11px; }
 .error { color: var(--red); min-height: 1em; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
 input {
   border: 1px solid var(--border);
   background: var(--panel);
   border-radius: 0;
-  padding: 8px 10px;
+  padding: 6px 8px;
   outline: none;
   color: var(--text);
   clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
@@ -290,7 +294,7 @@ input:focus {
   border-color: var(--cyan);
   box-shadow: var(--glow-cyan);
 }
-.primary, .cam { padding: 9px 12px; }
+.primary, .cam { padding: 7px 10px; }
 
 .salon { flex: 1; overflow: auto; }
 .section {
@@ -389,16 +393,16 @@ input:focus {
 }
 .settings {
   position: absolute;
-  inset: 52px 10px 10px;
+  inset: 36px 6px 6px;
   z-index: 5;
   background: rgba(255, 255, 255, 0.97);
   border: 1px solid var(--border);
   border-radius: 0;
-  padding: 12px;
+  padding: 8px;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   box-shadow: 0 10px 28px rgba(42, 51, 64, 0.12);
 }
 .settings[hidden] {
