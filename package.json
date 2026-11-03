@@ -1,7 +1,7 @@
 {
   "name": "decominicon",
   "productName": "DécoMiniCon",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "Conversation discrète : s’ouvre avec A N G E, sans raccourci bureau.",
   "main": "electron/main.js",
@@ -36,7 +36,7 @@
     ],
     "compression": "normal",
     "electronLanguages": ["fr", "en-US"],
-    "artifactName": "Decominicon-MettreAJour-${version}.${ext}",
+    "artifactName": "Decominicon-Install-${version}.${ext}",
     "directories": {
       "output": "build",
       "buildResources": "assets"
@@ -64,7 +64,7 @@
       "allowElevation": true,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": false,
-      "runAfterFinish": false,
+      "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
       "include": "installer.nsh",
       "installerLanguages": [
