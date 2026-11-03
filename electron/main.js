@@ -766,22 +766,13 @@ function snapToCorner() {
 }
 
 function hideGame() {
-  let game = null;
-  if (win32) {
-    try {
-      game = win32.hideForeground([chat, bar]);
-    } catch (err) {
-      log(`hide ${err.message}`);
-      game = { ok: false, reason: 'Impossible de masquer cette fenêtre.' };
-    }
-  }
-  // Masquer = ferme aussi le menu. Au retour : logo seul ; clic droit rouvre la page d’avant.
+  // Masquer = uniquement DécoMiniCon (logo + menu). Ne touche pas aux autres applis.
   chatVisible = false;
   chatSunk = false;
   stashApp();
   const result = {
     ok: true,
-    title: game && game.ok ? game.title : 'DécoMiniCon',
+    title: 'DécoMiniCon',
     stashed: true,
     openCombo,
     reason: `Tape ${openCombo} pour revenir`
