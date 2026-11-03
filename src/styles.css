@@ -374,77 +374,43 @@ input:focus {
 .check { flex-direction: row; align-items: center; color: var(--text); text-transform: none; letter-spacing: 0; }
 .check input { width: auto; clip-path: none; }
 
-body[data-view="bar"] { background: transparent; }
-.dock {
-  height: 100%;
+body[data-view="bar"] {
+  background: transparent;
+}
+body[data-view="bar"] #app {
   display: grid;
-  grid-template-columns: 28px 28px 1fr auto;
-  gap: 6px;
-  align-items: stretch;
-  padding: 8px;
-  background:
-    linear-gradient(90deg, rgba(122, 196, 210, 0.2), rgba(255, 255, 255, 0.55)),
-    var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  box-shadow: 0 4px 14px rgba(42, 51, 64, 0.1);
+  place-items: center;
+  background: transparent;
 }
-.dock.open-up:not(.solo) {
-  border-top: 2px solid var(--magenta);
-  background:
-    linear-gradient(90deg, rgba(217, 120, 92, 0.14), rgba(122, 196, 210, 0.12)),
-    var(--panel);
-}
-.dock.open-down:not(.solo) {
-  border-bottom: 2px solid var(--magenta);
-  background:
-    linear-gradient(90deg, rgba(217, 120, 92, 0.14), rgba(122, 196, 210, 0.12)),
-    var(--panel);
-}
-.dock.solo {
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 14px rgba(42, 51, 64, 0.1);
-}
-.dock.off { filter: saturate(0.75) brightness(0.98); }
-.grip, .chev, .big, .count {
+.bar-logo {
+  --buddy: 72px;
+  position: relative;
+  width: var(--buddy);
+  height: var(--buddy);
+  padding: 0;
   border: 0;
   background: transparent;
-  color: inherit;
-  clip-path: none;
+  cursor: grab;
 }
-.grip { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0; }
-.grip i { display: block; height: 2px; background: var(--cyan); }
-.grip i:nth-child(2) { background: var(--magenta); }
-.chev { font-size: 16px; color: var(--cyan); }
-.big {
-  text-align: left;
-  background: rgba(58, 143, 158, 0.08);
-  border: 1px solid rgba(58, 143, 158, 0.28);
-  border-radius: 0;
-  padding: 4px 10px;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-}
-.big strong {
-  display: block;
-  font-family: Fredoka, sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--cyan);
-}
-.big em { display: block; font-style: normal; font-size: 11px; color: var(--muted); }
-.count {
-  min-width: 42px;
-  border-radius: 0;
+.bar-logo:active { cursor: grabbing; }
+.bar-logo.off { filter: saturate(0.7) brightness(0.96); }
+.bar-logo.ringing { animation: pulse 1s ease-in-out infinite; }
+.bar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
   background: var(--magenta);
   color: #fff;
-  font-weight: 700;
+  font: 700 10px/18px Nunito, sans-serif;
+  text-align: center;
+  pointer-events: none;
   box-shadow: var(--glow-magenta);
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  z-index: 3;
 }
-.dock.ringing { animation: pulse 1s ease-in-out infinite; }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb {
   background: rgba(58, 143, 158, 0.35);

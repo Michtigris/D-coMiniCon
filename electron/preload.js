@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('deco', {
   toggleChat: () => ipcRenderer.invoke('chat:toggle'),
   showChat: () => ipcRenderer.invoke('chat:show'),
   snap: () => ipcRenderer.invoke('window:snap'),
+  popupMenu: () => ipcRenderer.send('menu:popup'),
   notify: (payload) => ipcRenderer.send('notify', payload),
   badge: (payload) => ipcRenderer.send('badge', payload),
   version: () => ipcRenderer.invoke('app:version'),

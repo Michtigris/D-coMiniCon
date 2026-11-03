@@ -14,7 +14,8 @@ if (!gotLock) {
 
 const W = 328;
 const CHAT_H = 492;
-const BAR_H = 68;
+const BAR_W = 96;
+const BAR_H = 96;
 const { start, stop } = require('../server/index');
 
 let win32 = null;
@@ -205,9 +206,13 @@ function stackHeight() {
   return (chatVisible ? CHAT_H - 1 : 0) + BAR_H;
 }
 
+function stackWidth() {
+  return chatVisible ? W : BAR_W;
+}
+
 function barBounds() {
   if (bar && !bar.isDestroyed()) return bar.getBounds();
-  return { x: 0, y: 0, width: W, height: BAR_H };
+  return { x: 0, y: 0, width: BAR_W, height: BAR_H };
 }
 
 function stackPos() {
@@ -217,21 +222,22 @@ function stackPos() {
   }
   const chatB = chat.getBounds();
   const barB = barBounds();
-  return { x: barB.x, y: Math.min(chatB.y, barB.y) };
+  return { x: chatB.x, y: Math.min(chatB.y, barB.y) };
 }
 
 function decideOpenUp(barY) {
-  const point = { x: barBounds().x + Math.floor(W / 2), y: Math.round(barY + BAR_H / 2) };
+  const point = { x: barBounds().x + Math.floor(BAR_W / 2), y: Math.round(barY + BAR_H / 2) };
   const area = screen.getDisplayNearestPoint(point).workArea;
   return point.y >= area.y + area.height / 2;
 }
 
 function clamp(x, y) {
   const height = stackHeight();
-  const display = screen.getDisplayNearestPoint({ x: Math.round(x + W / 2), y: Math.round(y + height / 2) });
+  const width = stackWidth();
+  const display = screen.getDisplayNearestPoint({ x: Math.round(x + width / 2), y: Math.round(y + height / 2) });
   const area = display.workArea;
   return {
-    x: Math.round(Math.min(Math.max(x, area.x), area.x + area.width - Math.min(W, area.width))),
+    x: Math.round(Math.min(Math.max(x, area.x), area.x + area.width - Math.min(width, area.width))),
     y: Math.round(Math.min(Math.max(y, area.y), area.y + area.height - Math.min(height, area.height)))
   };
 }
@@ -243,8 +249,9 @@ function cornerPosition() {
     display = screen.getDisplayNearestPoint({ x: bounds.x + 8, y: bounds.y + 8 });
   }
   const area = display.workArea;
+  const width = stackWidth();
   return {
-    x: area.x + area.width - W - 16,
+    x: area.x + area.width - width - 16,
     y: area.y + area.height - stackHeight() - 16
   };
 }
@@ -277,15 +284,15 @@ function layout(x, y) {
   if (chatVisible) {
     if (openUp) {
       chat.setBounds({ x: pos.x, y: pos.y, width: W, height: CHAT_H });
-      bar.setBounds({ x: pos.x, y: pos.y + CHAT_H - 1, width: W, height: BAR_H });
+      bar.setBounds({ x: pos.x, y: pos.y + CHAT_H - 1, width: BAR_W, height: BAR_H });
     } else {
-      bar.setBounds({ x: pos.x, y: pos.y, width: W, height: BAR_H });
+      bar.setBounds({ x: pos.x, y: pos.y, width: BAR_W, height: BAR_H });
       chat.setBounds({ x: pos.x, y: pos.y + BAR_H - 1, width: W, height: CHAT_H });
     }
     if (!chat.isVisible()) chat.showInactive();
   } else {
     chat.hide();
-    bar.setBounds({ x: pos.x, y: pos.y, width: W, height: BAR_H });
+    bar.setBounds({ x: pos.x, y: pos.y, width: BAR_W, height: BAR_H });
   }
   if (!bar.isVisible()) bar.showInactive();
   if (!dragging) bar.setAlwaysOnTop(true, 'screen-saver');
@@ -631,9 +638,10 @@ function createWindows() {
   });
   bar = new BrowserWindow({
     ...common,
+    width: BAR_W,
     height: BAR_H,
-    transparent: false,
-    backgroundColor: '#ffffff',
+    transparent: true,
+    backgroundColor: '#00000000',
     roundedCorners: false,
     focusable: true
   });
@@ -679,30 +687,40 @@ function createWindows() {
   });
 }
 
+function appMenuTemplate() {
+  const canHideChat = !!(chatVisible && menuIsLinked() && !stashed);
+  return [
+    {
+      label: canHideChat ? 'Cacher la conversation' : `Afficher (ou tape ${openCombo})`,
+      click: () => {
+        if (stashed) revealApp();
+        else toggleChatWindow();
+      }
+    },
+    { label: 'Remettre en bas à droite', click: () => snapToCorner() },
+    { label: 'Masquer', click: () => hideGame() },
+    { type: 'separator' },
+    { label: 'Quitter DécoMiniCon', click: () => app.quit() }
+  ];
+}
+
 function createTray() {
   const image = nativeImage.createFromPath(iconPath());
   tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image.resize({ width: 32, height: 32 }));
   updateTrayTip();
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `Afficher (ou tape ${openCombo})`, click: () => revealApp() },
-    { label: 'Remettre en bas à droite', click: () => snapToCorner() },
-    { label: 'Ranger complètement', click: () => hideGame() },
-    { type: 'separator' },
-    { label: 'Quitter DécoMiniCon', click: () => app.quit() }
-  ]));
+  tray.setContextMenu(Menu.buildFromTemplate(appMenuTemplate()));
   tray.on('click', () => revealApp());
 }
 
 function refreshTrayMenu() {
   if (!tray) return;
   updateTrayTip();
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `Afficher (ou tape ${openCombo})`, click: () => revealApp() },
-    { label: 'Remettre en bas à droite', click: () => snapToCorner() },
-    { label: 'Ranger complètement', click: () => hideGame() },
-    { type: 'separator' },
-    { label: 'Quitter DécoMiniCon', click: () => app.quit() }
-  ]));
+  tray.setContextMenu(Menu.buildFromTemplate(appMenuTemplate()));
+}
+
+function popupAppMenu() {
+  if (!bar || bar.isDestroyed()) return;
+  Menu.buildFromTemplate(appMenuTemplate()).popup({ window: bar });
 }
 
 function sendToChat(channel, payload) {
@@ -826,6 +844,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.on('drag:begin', () => beginDrag());
+  ipcMain.on('menu:popup', () => popupAppMenu());
   ipcMain.handle('game:hide', () => hideGame());
   ipcMain.handle('chat:toggle', () => toggleChatWindow());
   ipcMain.handle('chat:show', () => {

@@ -1,78 +1,72 @@
 const app = document.getElementById('app');
-let last = { connected: false, unread: 0, partner: '', call: '' };
-let visible = true;
-let flashing = false;
-let flashTimer = 0;
 
 app.innerHTML = `
-  <div class="dock" id="dock">
-    <button type="button" class="grip" id="grip" aria-label="Déplacer">
-      <i></i><i></i><i></i>
-    </button>
-    <button type="button" class="chev" id="chev" aria-label="Afficher ou cacher la conversation">▾</button>
-    <button type="button" class="big" id="hide">
-      <span>
-        <strong>Masquer</strong>
-        <em id="sub">Salon</em>
-      </span>
-    </button>
-    <button type="button" class="count" id="count" hidden>1</button>
-  </div>
+  <button type="button" class="buddy bar-logo" id="logo" title="Glisser · double-clic = Masquer · clic droit = menu" aria-label="DécoMiniCon">
+    <span class="buddy-stage">
+      <span class="buddy-top"></span>
+      <span class="buddy-bottom"></span>
+    </span>
+    <span class="bar-badge" id="badge" hidden>0</span>
+  </button>
 `;
 
-const dock = document.getElementById('dock');
-const sub = document.getElementById('sub');
-const count = document.getElementById('count');
-const chev = document.getElementById('chev');
+const logo = document.getElementById('logo');
+const badge = document.getElementById('badge');
+let nextSide = 'right';
+let animTimer = 0;
 
-function subtitle(badge) {
-  if (badge.call) return `${badge.call} t’appelle`;
-  if (badge.partner) return badge.connected ? badge.partner : `${badge.partner} · hors ligne`;
-  return badge.connected ? 'Salon' : 'Hors ligne';
+function stopAnim() {
+  clearTimeout(animTimer);
+  logo.classList.remove('talking', 'talk-left', 'talk-right');
 }
 
-function render(badge) {
-  last = { ...last, ...(badge || {}) };
-  dock.classList.toggle('ringing', !!last.call);
-  dock.classList.toggle('off', !last.connected);
-  if (!flashing) sub.textContent = subtitle(last);
-  const showCount = !last.call && last.unread > 0;
-  count.hidden = !showCount && !last.call;
-  count.textContent = last.call ? 'Appel' : String(last.unread);
+function startAnim() {
+  stopAnim();
+  logo.classList.add('talking', nextSide === 'right' ? 'talk-right' : 'talk-left');
+  nextSide = nextSide === 'right' ? 'left' : 'right';
 }
 
-document.getElementById('grip').addEventListener('pointerdown', (event) => {
+logo.addEventListener('pointerenter', () => {
+  startAnim();
+});
+
+logo.addEventListener('pointerleave', () => {
+  // Laisse finir un cycle puis ferme la bouche
+  animTimer = setTimeout(stopAnim, 180);
+});
+
+logo.addEventListener('pointerdown', (event) => {
+  if (event.button === 2) {
+    event.preventDefault();
+    window.deco.popupMenu();
+    return;
+  }
   if (event.button !== 0) return;
   window.deco.beginDrag();
 });
 
-document.getElementById('hide').addEventListener('click', () => window.deco.hideGame());
-chev.addEventListener('click', () => window.deco.toggleChat());
-count.addEventListener('click', () => window.deco.showChat());
-
-window.deco.on('badge', render);
-window.deco.on('chat:visible', (info) => {
-  visible = !!info.visible;
-  const linked = info.linked !== undefined ? !!info.linked : visible;
-  const openUp = info.openUp !== false;
-  // Même logique que la bordure : sans menu lié → bouton « ouvrir » (un clic suffit).
-  chev.textContent = linked ? '▾' : '▴';
-  chev.setAttribute('aria-label', linked ? 'Cacher la conversation' : 'Afficher la conversation');
-  dock.classList.toggle('solo', !linked);
-  dock.classList.toggle('open-up', !!(linked && openUp));
-  dock.classList.toggle('open-down', !!(linked && !openUp));
-  if (!linked) {
-    dock.classList.add('solo');
-    dock.classList.remove('open-up', 'open-down');
-  }
+logo.addEventListener('dblclick', (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  stopAnim();
+  window.deco.hideGame();
 });
-window.deco.on('game:result', (result) => {
-  flashing = true;
-  if (result.stashed) sub.textContent = result.reason || `Tape ${result.openCombo || 'ANGE'} pour revenir`;
-  else sub.textContent = result.ok ? `« ${result.title} » masqué` : result.reason;
-  clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => {
-    flashing = false;
-    sub.textContent = subtitle(last);
-  }, 2200);
+
+logo.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  window.deco.popupMenu();
+});
+
+window.deco.on('badge', (info) => {
+  const unread = Number(info?.unread) || 0;
+  const call = !!info?.call;
+  const show = call || unread > 0;
+  badge.hidden = !show;
+  badge.textContent = call ? '!' : (unread > 9 ? '9+' : String(unread));
+  logo.classList.toggle('ringing', call);
+  logo.classList.toggle('off', info && info.connected === false);
+});
+
+window.deco.on('game:result', () => {
+  // rien à afficher : le logo est masqué avec l’app
 });
