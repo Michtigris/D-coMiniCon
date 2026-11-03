@@ -4,7 +4,10 @@ app.innerHTML = `
   <div class="bar-root" id="root">
     <button type="button" class="buddy bar-logo" id="logo" title="DécoMiniCon" aria-label="DécoMiniCon">
       <span class="buddy-stage">
-        <span class="buddy-top"></span>
+        <span class="buddy-top">
+          <i class="eye eye-l" aria-hidden="true"></i>
+          <i class="eye eye-r" aria-hidden="true"></i>
+        </span>
         <span class="buddy-bottom"></span>
       </span>
       <span class="bar-badge" id="badge" hidden>0</span>
@@ -270,4 +273,9 @@ window.deco.on('badge', (info) => {
   badge.textContent = call ? '!' : (unread > 9 ? '9+' : String(unread));
   logo.classList.toggle('ringing', call);
   logo.classList.toggle('off', info && info.connected === false);
+  // Yeux vert/rouge uniquement sur ce logo flottant, si serveur connecté
+  const onServer = !!info?.connected;
+  logo.classList.toggle('eyes-on', onServer);
+  logo.classList.toggle('eyes-online', onServer && !!info?.partnerOnline);
+  logo.classList.toggle('eyes-offline', onServer && !info?.partnerOnline);
 });

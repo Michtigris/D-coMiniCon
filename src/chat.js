@@ -86,6 +86,7 @@ function pushBadge() {
     connected: state.status === 'online',
     unread: state.unread,
     partner: state.partner?.pseudo || '',
+    partnerOnline: !!(state.partner && state.partner.online),
     call: state.call?.role === 'in' ? state.call.pseudo : ''
   });
 }
