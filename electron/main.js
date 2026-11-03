@@ -489,6 +489,7 @@ function layout(barX, barY) {
 }
 
 function openChatAroundLogo() {
+  setBarExpanded(false);
   const anchor = barBounds();
   const dir = decideOpenDir(anchor.x, anchor.y);
   openUp = dir.openUp;
@@ -515,6 +516,7 @@ function toggleChatWindow() {
   } else {
     chatVisible = false;
     chatSunk = false;
+    setBarExpanded(false);
     layout(anchor.x, anchor.y);
   }
   savePosition();
@@ -968,7 +970,16 @@ function setBarExpanded(on) {
   if (!bar || bar.isDestroyed()) return;
   const b = bar.getBounds();
   const width = on ? barExpandedW() : barW();
-  bar.setBounds({ x: b.x, y: b.y, width, height: barH() });
+  const height = barH();
+  // Ne jamais laisser une bande fantôme : largeur stricte logo ou logo+statut
+  bar.setBounds({ x: b.x, y: b.y, width, height });
+  if (!on) {
+    try {
+      bar.setContentSize(width, height);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function applyManualUpdate() {

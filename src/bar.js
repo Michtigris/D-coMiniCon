@@ -109,7 +109,29 @@ function statusLabel(info) {
   }
 }
 
+const STATUS_MAX_MS = 5000;
+let statusWanted = false;
+let updateBusy = false;
+let lastUpdateCheckAt = 0;
+
+function hideStatus() {
+  clearTimeout(hideStatusTimer);
+  hideStatusTimer = 0;
+  statusBtn.hidden = true;
+  statusBtn.textContent = '';
+  statusBtn.classList.remove('can-update', 'is-ok', 'is-busy', 'is-err');
+  window.deco.expandBar(false);
+}
+
+/** Ferme le bandeau màj et ignore les réponses en retard (évite le bug clic G + clic D). */
+function dismissStatus() {
+  statusWanted = false;
+  cancelSingleClick();
+  hideStatus();
+}
+
 function renderStatus(info) {
+  if (!statusWanted) return;
   updateInfo = { ...updateInfo, ...(info || {}) };
   const clickable = updateInfo.status === 'available' || updateInfo.status === 'ready';
   statusBtn.hidden = false;
@@ -123,39 +145,28 @@ function renderStatus(info) {
     : (updateInfo.message || statusLabel(updateInfo));
   window.deco.expandBar(true);
   clearTimeout(hideStatusTimer);
-  if (updateInfo.status === 'latest' || updateInfo.status === 'dev') {
-    hideStatusTimer = setTimeout(hideStatus, 3200);
-  } else if (updateInfo.status === 'error') {
-    hideStatusTimer = setTimeout(hideStatus, 4200);
-  }
+  // Jamais plus de 5 s à l’écran
+  hideStatusTimer = setTimeout(dismissStatus, STATUS_MAX_MS);
 }
-
-function hideStatus() {
-  clearTimeout(hideStatusTimer);
-  hideStatusTimer = 0;
-  statusBtn.hidden = true;
-  statusBtn.classList.remove('can-update', 'is-ok', 'is-busy', 'is-err');
-  window.deco.expandBar(false);
-}
-
-let updateBusy = false;
-let lastUpdateCheckAt = 0;
 
 async function runUpdateCheck() {
   if (updateBusy) return;
   const now = Date.now();
-  // Évite de spammer « Erreur màj » à chaque clic
   if (now - lastUpdateCheckAt < 20000 && updateInfo.status === 'error') {
+    statusWanted = true;
     renderStatus(updateInfo);
     return;
   }
   updateBusy = true;
   lastUpdateCheckAt = now;
+  statusWanted = true;
   renderStatus({ status: 'checking', current: updateInfo.current });
   try {
     const info = await window.deco.checkUpdate();
+    if (!statusWanted) return;
     renderStatus(info);
   } catch (err) {
+    if (!statusWanted) return;
     renderStatus({ status: 'error', message: err?.message || 'Vérification impossible' });
   } finally {
     updateBusy = false;
@@ -213,8 +224,7 @@ logo.addEventListener('pointermove', (event) => {
   const dy = event.screenY - press.y;
   if ((dx * dx) + (dy * dy) < DRAG_PX * DRAG_PX) return;
   didDrag = true;
-  cancelSingleClick();
-  hideStatus();
+  dismissStatus();
   window.deco.beginDrag();
 });
 
@@ -258,35 +268,39 @@ logo.addEventListener('pointercancel', () => {
 logo.addEventListener('dblclick', (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
-  cancelSingleClick();
+  dismissStatus();
   pressing = false;
   pausedForGrab = false;
   hovering = false;
   stopAnim();
-  hideStatus();
   window.deco.endDrag();
   window.deco.hideGame();
 });
 
 logo.addEventListener('contextmenu', (event) => {
   event.preventDefault();
-  cancelSingleClick();
-  hideStatus();
+  // Annule la vérif màj pour ne pas laisser une bande fantôme à côté du logo
+  dismissStatus();
   window.deco.toggleChat();
 });
 
 statusBtn.addEventListener('click', async (event) => {
   event.preventDefault();
   if (updateInfo.status !== 'available' && updateInfo.status !== 'ready') return;
+  statusWanted = true;
   renderStatus({ ...updateInfo, status: updateInfo.status === 'ready' ? 'ready' : 'downloading' });
   try {
     await window.deco.installUpdate();
   } catch (err) {
+    if (!statusWanted) return;
     renderStatus({ status: 'error', message: err?.message || 'Installation impossible' });
   }
 });
 
-window.deco.on('update:status', renderStatus);
+window.deco.on('update:status', (info) => {
+  if (!statusWanted) return;
+  renderStatus(info);
+});
 
 window.deco.on('badge', (info) => {
   const unread = Number(info?.unread) || 0;
