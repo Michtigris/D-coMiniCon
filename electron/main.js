@@ -1019,7 +1019,7 @@ async function checkUpdateManual() {
         })
       ]);
       // Les events updater peuvent déjà avoir posé latest/available
-      if (updateState === 'checking' || updateState === 'error') {
+      if (updateState === 'checking') {
         const remote = result?.updateInfo?.version;
         if (remote && remote !== app.getVersion()) {
           updateState = 'available';
@@ -1033,11 +1033,9 @@ async function checkUpdateManual() {
       }
     } catch (err) {
       log(`updater check ${err.message}`);
-      // Pas d’état « error » collant : on renvoie latest (version locale)
-      if (updateState === 'checking' || updateState === 'error') {
-        updateState = 'latest';
-        updateRemoteVersion = '';
-        updateError = '';
+      if (updateState === 'checking') {
+        updateState = 'error';
+        updateError = err.message || 'Erreur màj';
         tellUpdateStatus();
       }
     } finally {
@@ -1084,9 +1082,12 @@ function setupUpdater() {
   try {
     const { autoUpdater } = require('electron-updater');
     updaterRef = autoUpdater;
+    // Provider GitHub natif (app-update.yml). Le feed « generic » vers
+    // /releases/latest/download/ cassait le check (404 latest.yml après redirect).
     autoUpdater.setFeedURL({
-      provider: 'generic',
-      url: 'https://github.com/Michtigris/D-coMiniCon/releases/latest/download/'
+      provider: 'github',
+      owner: 'Michtigris',
+      repo: 'D-coMiniCon'
     });
     // Aucune màj auto : check / download / install seulement sur action utilisateur.
     autoUpdater.autoDownload = false;
@@ -1124,13 +1125,9 @@ function setupUpdater() {
     });
     autoUpdater.on('error', (err) => {
       log(`updater ${err.message || err}`);
-      // Pendant un check, l’erreur est gérée par checkUpdateManual (→ latest soft).
-      // On ne force « error » que si un téléchargement est en cours.
-      if (updateState === 'downloading') {
-        updateState = 'error';
-        updateError = err.message || 'Erreur màj';
-        tellUpdateStatus();
-      }
+      updateState = 'error';
+      updateError = err.message || 'Erreur màj';
+      tellUpdateStatus();
     });
   } catch (err) {
     log(`updater ${err.message}`);

@@ -133,25 +133,19 @@ function dismissStatus() {
 function renderStatus(info) {
   if (!statusWanted) return;
   updateInfo = { ...updateInfo, ...(info || {}) };
-  // Ne jamais coller « Erreur màj » à l’écran : on ferme silencieusement
-  if (updateInfo.status === 'error') {
-    dismissStatus();
-    return;
-  }
   const clickable = updateInfo.status === 'available' || updateInfo.status === 'ready';
   statusBtn.hidden = false;
   statusBtn.textContent = statusLabel(updateInfo);
   statusBtn.classList.toggle('can-update', clickable);
   statusBtn.classList.toggle('is-ok', updateInfo.status === 'latest' || updateInfo.status === 'dev');
   statusBtn.classList.toggle('is-busy', updateInfo.status === 'checking' || updateInfo.status === 'downloading' || updateInfo.status === 'ready');
-  statusBtn.classList.toggle('is-err', false);
+  statusBtn.classList.toggle('is-err', updateInfo.status === 'error');
   statusBtn.title = clickable
     ? 'Cliquer pour installer la mise à jour'
     : (updateInfo.message || statusLabel(updateInfo));
   window.deco.expandBar(true);
   clearTimeout(hideStatusTimer);
-  const ttl = updateInfo.status === 'checking' ? STATUS_MAX_MS : STATUS_MAX_MS;
-  hideStatusTimer = setTimeout(dismissStatus, ttl);
+  hideStatusTimer = setTimeout(dismissStatus, STATUS_MAX_MS);
 }
 
 async function runUpdateCheck() {
@@ -163,18 +157,10 @@ async function runUpdateCheck() {
   try {
     const info = await window.deco.checkUpdate();
     if (!statusWanted) return;
-    if (!info || info.status === 'error') {
-      // Échec réseau / feed : on affiche quand même « À jour » avec la version locale
-      renderStatus({
-        status: 'latest',
-        current: info?.current || updateInfo.current || ''
-      });
-      return;
-    }
-    renderStatus(info);
-  } catch {
+    renderStatus(info || { status: 'error', message: 'Erreur màj' });
+  } catch (err) {
     if (!statusWanted) return;
-    renderStatus({ status: 'latest', current: updateInfo.current || '' });
+    renderStatus({ status: 'error', message: err?.message || 'Erreur màj' });
   } finally {
     updateBusy = false;
   }
