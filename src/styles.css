@@ -194,27 +194,43 @@ input:focus {
 }
 .primary, .cam { padding: 9px 12px; }
 .mark {
-  width: 54px;
-  height: 42px;
-  border: 1px solid var(--border);
-  border-radius: 0;
+  width: 52px;
+  height: 40px;
+  border: 2px solid #2a3340;
+  border-bottom: 0;
+  border-radius: 26px 26px 8px 8px;
   position: relative;
-  background:
-    linear-gradient(var(--magenta), var(--magenta)) bottom / 100% 6px no-repeat,
-    var(--panel);
-  box-shadow: var(--glow-cyan);
+  margin-bottom: 14px;
+  background: var(--cyan);
+  box-shadow: none;
 }
 .mark::before, .mark::after {
   content: "";
   position: absolute;
-  top: 12px;
-  width: 6px;
-  height: 6px;
-  border-radius: 0;
-  background: var(--cyan);
+  background: #2a3340;
 }
-.mark::before { left: 12px; }
-.mark::after { right: 12px; }
+/* yeux */
+.mark::before {
+  top: 14px;
+  left: 12px;
+  width: 7px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: 18px 0 0 #2a3340;
+}
+/* double bande collier / bouche */
+.mark::after {
+  left: -2px;
+  right: -2px;
+  bottom: -12px;
+  height: 10px;
+  border-radius: 0;
+  background:
+    linear-gradient(#2a3340, #2a3340) top / 100% 2px no-repeat,
+    linear-gradient(var(--magenta), var(--magenta)) center / 100% 3px no-repeat,
+    linear-gradient(#2a3340, #2a3340) bottom / 100% 2px no-repeat,
+    transparent;
+}
 
 .salon { flex: 1; overflow: auto; }
 .section {
