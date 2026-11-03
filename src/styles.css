@@ -114,10 +114,10 @@ button:disabled { cursor: default; opacity: 0.45; }
 }
 /* Pendant la parole : oscille ouvert ↔ presque fermé (petit écart gardé) */
 .buddy.talking.talk-right .buddy-top {
-  animation: canadian-talk-right 0.2s ease-in-out infinite alternate;
+  animation: canadian-talk-right var(--talk-dur, 0.2s) ease-in-out infinite alternate;
 }
 .buddy.talking.talk-left .buddy-top {
-  animation: canadian-talk-left 0.2s ease-in-out infinite alternate;
+  animation: canadian-talk-left var(--talk-dur, 0.2s) ease-in-out infinite alternate;
 }
 @keyframes canadian-talk-right {
   from { transform: translateY(-3px) translateX(1px) rotate(-3deg); }

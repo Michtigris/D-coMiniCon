@@ -16,7 +16,10 @@ app.innerHTML = `
 const logo = document.getElementById('logo');
 const badge = document.getElementById('badge');
 const statusBtn = document.getElementById('status');
-const FLIP_MS = 340;
+const NORMAL_FLIP_MS = 340;
+const NORMAL_DUR = 0.2;
+const SLOW_DUR = 0.9;
+const RAMP_MS = 500;
 const DRAG_PX = 6;
 const CLICK_DELAY_MS = 350;
 let nextSide = 'right';
@@ -24,14 +27,32 @@ let flipTimer = 0;
 let closeTimer = 0;
 let clickTimer = 0;
 let hideStatusTimer = 0;
+let rampRaf = 0;
+let talkDur = NORMAL_DUR;
 let hovering = false;
+let pressing = false;
+let stoppedForGrab = false;
 let press = null;
 let didDrag = false;
 let updateInfo = { status: 'idle', current: '', version: null, message: null };
 
-function stopAnim() {
+function setTalkDur(sec) {
+  talkDur = sec;
+  logo.style.setProperty('--talk-dur', `${sec}s`);
+}
+
+function clearRamp() {
+  if (rampRaf) cancelAnimationFrame(rampRaf);
+  rampRaf = 0;
+}
+
+function clearFlip() {
   clearInterval(flipTimer);
   flipTimer = 0;
+}
+
+function stopAnim() {
+  clearFlip();
   clearTimeout(closeTimer);
   closeTimer = 0;
   logo.classList.remove('talking', 'talk-left', 'talk-right');
@@ -44,16 +65,96 @@ function flipSide() {
   nextSide = nextSide === 'right' ? 'left' : 'right';
 }
 
-function startHoverTalk() {
+function flipIntervalFor(dur) {
+  return Math.max(280, Math.round(dur * 1700));
+}
+
+function startFlipLoop(intervalMs) {
+  clearFlip();
+  flipSide();
+  flipTimer = setInterval(() => {
+    if (hovering || pressing) flipSide();
+  }, intervalMs);
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
+}
+
+function rampDur(from, to, ms, onFrame, onDone) {
+  clearRamp();
+  const t0 = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - t0) / ms);
+    const v = from + (to - from) * easeInOut(t);
+    setTalkDur(v);
+    onFrame?.(v, t);
+    if (t < 1) {
+      rampRaf = requestAnimationFrame(step);
+    } else {
+      rampRaf = 0;
+      onDone?.(to);
+    }
+  };
+  rampRaf = requestAnimationFrame(step);
+}
+
+function startHoverTalk(normal = true) {
   hovering = true;
   clearTimeout(closeTimer);
   closeTimer = 0;
-  if (!flipTimer) {
-    flipSide();
-    flipTimer = setInterval(() => {
-      if (hovering) flipSide();
-    }, FLIP_MS);
+  if (pressing || stoppedForGrab) return;
+  clearRamp();
+  if (normal) setTalkDur(NORMAL_DUR);
+  if (!logo.classList.contains('talking') || !flipTimer) {
+    startFlipLoop(flipIntervalFor(talkDur));
   }
+}
+
+function slowToStopForGrab() {
+  stoppedForGrab = false;
+  clearTimeout(closeTimer);
+  closeTimer = 0;
+  if (!logo.classList.contains('talking')) {
+    setTalkDur(NORMAL_DUR);
+    startFlipLoop(NORMAL_FLIP_MS);
+  }
+  const from = talkDur;
+  rampDur(from, SLOW_DUR, RAMP_MS, (dur) => {
+    // Ralentit le rythme des claps pendant le grab
+    if (flipTimer) {
+      clearFlip();
+      flipTimer = setInterval(() => {
+        if (pressing) flipSide();
+      }, flipIntervalFor(dur));
+    }
+  }, () => {
+    if (!pressing) return;
+    stopAnim();
+    stoppedForGrab = true;
+  });
+}
+
+function resumeAfterGrab() {
+  stoppedForGrab = false;
+  if (!hovering) {
+    stopAnim();
+    setTalkDur(NORMAL_DUR);
+    return;
+  }
+  setTalkDur(SLOW_DUR);
+  startFlipLoop(flipIntervalFor(SLOW_DUR));
+  rampDur(SLOW_DUR, NORMAL_DUR, RAMP_MS, (dur) => {
+    if (!hovering) return;
+    clearFlip();
+    flipTimer = setInterval(() => {
+      if (hovering && !pressing) flipSide();
+    }, flipIntervalFor(dur));
+  }, () => {
+    if (!hovering || pressing) return;
+    setTalkDur(NORMAL_DUR);
+    startFlipLoop(NORMAL_FLIP_MS);
+  });
 }
 
 function statusLabel(info) {
@@ -71,7 +172,7 @@ function statusLabel(info) {
     case 'dev':
       return `Dev · v${info.current || '?'}`;
     case 'error':
-      return info.message ? `Erreur màj` : 'Erreur màj';
+      return 'Erreur màj';
     default:
       return 'Vérifier les màj';
   }
@@ -129,13 +230,19 @@ function cancelSingleClick() {
   clickTimer = 0;
 }
 
-logo.addEventListener('pointerenter', startHoverTalk);
+setTalkDur(NORMAL_DUR);
+
+logo.addEventListener('pointerenter', () => startHoverTalk(true));
 
 logo.addEventListener('pointerleave', () => {
   hovering = false;
-  clearInterval(flipTimer);
-  flipTimer = 0;
-  closeTimer = setTimeout(stopAnim, 160);
+  if (pressing) return;
+  clearRamp();
+  clearFlip();
+  closeTimer = setTimeout(() => {
+    stopAnim();
+    setTalkDur(NORMAL_DUR);
+  }, 160);
 });
 
 logo.addEventListener('pointerdown', (event) => {
@@ -147,8 +254,11 @@ logo.addEventListener('pointerdown', (event) => {
   }
   if (event.button !== 0) return;
   didDrag = false;
+  pressing = true;
   press = { x: event.screenX, y: event.screenY };
   logo.setPointerCapture(event.pointerId);
+  // Maintien clic gauche : ralentit puis s’arrête
+  slowToStopForGrab();
 });
 
 logo.addEventListener('pointermove', (event) => {
@@ -170,8 +280,26 @@ logo.addEventListener('pointerup', (event) => {
     // ignore
   }
   const wasDrag = didDrag;
+  const wasStopped = stoppedForGrab;
   press = null;
   didDrag = false;
+  pressing = false;
+
+  if (wasStopped) {
+    // Relâche après arrêt : reprend doucement si toujours dessus
+    resumeAfterGrab();
+  } else {
+    // Clic court : annule le ralentissement, reprend normal
+    clearRamp();
+    if (hovering) {
+      setTalkDur(NORMAL_DUR);
+      startFlipLoop(NORMAL_FLIP_MS);
+    } else {
+      stopAnim();
+      setTalkDur(NORMAL_DUR);
+    }
+  }
+
   if (wasDrag) return;
   armSingleClick();
 });
@@ -179,15 +307,26 @@ logo.addEventListener('pointerup', (event) => {
 logo.addEventListener('pointercancel', () => {
   press = null;
   didDrag = false;
+  pressing = false;
   cancelSingleClick();
+  if (stoppedForGrab && hovering) resumeAfterGrab();
+  else if (!hovering) {
+    clearRamp();
+    stopAnim();
+    setTalkDur(NORMAL_DUR);
+  }
 });
 
 logo.addEventListener('dblclick', (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
   cancelSingleClick();
+  pressing = false;
+  stoppedForGrab = false;
   hovering = false;
+  clearRamp();
   stopAnim();
+  setTalkDur(NORMAL_DUR);
   hideStatus();
   window.deco.hideGame();
 });
