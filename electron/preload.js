@@ -4,7 +4,8 @@ const CHANNELS = new Set([
   'notify:click',
   'badge',
   'game:result',
-  'chat:visible'
+  'chat:visible',
+  'update:status'
 ]);
 
 contextBridge.exposeInMainWorld('deco', {
@@ -18,6 +19,9 @@ contextBridge.exposeInMainWorld('deco', {
   showChat: () => ipcRenderer.invoke('chat:show'),
   snap: () => ipcRenderer.invoke('window:snap'),
   popupMenu: () => ipcRenderer.send('menu:popup'),
+  expandBar: (on) => ipcRenderer.send('bar:expand', !!on),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
   notify: (payload) => ipcRenderer.send('notify', payload),
   badge: (payload) => ipcRenderer.send('badge', payload),
   version: () => ipcRenderer.invoke('app:version'),

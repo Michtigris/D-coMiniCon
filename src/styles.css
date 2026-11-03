@@ -379,8 +379,15 @@ body[data-view="bar"] {
 }
 body[data-view="bar"] #app {
   display: grid;
-  place-items: center;
+  place-items: center start;
   background: transparent;
+}
+.bar-root {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px 0 12px;
 }
 .bar-logo {
   --buddy: 72px;
@@ -391,6 +398,7 @@ body[data-view="bar"] #app {
   border: 0;
   background: transparent;
   cursor: grab;
+  flex-shrink: 0;
 }
 .bar-logo:active { cursor: grabbing; }
 .bar-logo.off { filter: saturate(0.7) brightness(0.96); }
@@ -411,6 +419,29 @@ body[data-view="bar"] #app {
   box-shadow: var(--glow-magenta);
   z-index: 3;
 }
+.bar-status {
+  border: 1px solid rgba(58, 143, 158, 0.35);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--cyan);
+  font: 700 11px/1.2 Nunito, sans-serif;
+  letter-spacing: 0.02em;
+  padding: 8px 10px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  white-space: nowrap;
+  max-width: 140px;
+  text-align: left;
+  cursor: default;
+}
+.bar-status.can-update {
+  color: #fff;
+  background: var(--magenta);
+  border-color: rgba(217, 120, 92, 0.55);
+  cursor: pointer;
+  box-shadow: var(--glow-magenta);
+}
+.bar-status.is-ok { color: var(--green); }
+.bar-status.is-busy { color: var(--amber); }
+.bar-status.is-err { color: var(--red); }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb {
   background: rgba(58, 143, 158, 0.35);

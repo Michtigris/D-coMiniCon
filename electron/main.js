@@ -507,13 +507,10 @@ function stashApp() {
   if (chat && !chat.isDestroyed()) chat.hide();
   if (bar && !bar.isDestroyed()) bar.hide();
   updateTrayTip();
-  scheduleUpdateAfterStash();
 }
 
 function revealApp() {
   if (!windowsReady()) return;
-  // Dès que l’UI revient : stop checks / pas d’install en cours d’usage.
-  clearStashUpdateTimers();
   if (!stashed && bar.isVisible()) {
     if (chatVisible) {
       raiseChat();
@@ -727,58 +724,111 @@ function sendToChat(channel, payload) {
   if (chat && !chat.isDestroyed()) chat.webContents.send(channel, payload);
 }
 
-const UPDATE_WHILE_STASHED_MS = 20 * 60 * 1000;
-const UPDATE_AFTER_STASH_MS = 10 * 1000;
-
 let updaterRef = null;
 let updateReady = false;
-let stashUpdateTimer = null;
-let stashCheckInterval = null;
+let updateRemoteVersion = '';
+let updateState = 'idle'; // idle | checking | latest | available | downloading | ready | error | dev
+let updateError = '';
 
-function clearStashUpdateTimers() {
-  if (stashUpdateTimer) clearTimeout(stashUpdateTimer);
-  stashUpdateTimer = null;
-  if (stashCheckInterval) clearInterval(stashCheckInterval);
-  stashCheckInterval = null;
+function updatePayload() {
+  return {
+    status: updateState,
+    current: app.getVersion(),
+    version: updateRemoteVersion || null,
+    message: updateError || null
+  };
 }
 
-function applyUpdateNow(reason) {
-  // Jamais pendant que l’UI est affichée / utilisée.
-  if (!updaterRef || !updateReady || !stashed || quitting) return false;
+function tellUpdateStatus() {
+  if (!bar || bar.isDestroyed()) return;
+  bar.webContents.send('update:status', updatePayload());
+}
+
+function setBarExpanded(on) {
+  if (!bar || bar.isDestroyed()) return;
+  const b = bar.getBounds();
+  const width = on ? 240 : BAR_W;
+  bar.setBounds({ x: b.x, y: b.y, width, height: BAR_H });
+}
+
+function applyManualUpdate() {
+  if (!updaterRef || !updateReady || quitting) return false;
   try {
     backupProfile();
-    log(`Installation màj silencieuse (${reason}) — sans rouvrir`);
-    // isSilent=true (pas de fenêtre), isForceRunAfter=false (ne relance pas l’app).
-    updaterRef.quitAndInstall(true, false);
+    log('Installation màj manuelle');
+    updaterRef.quitAndInstall(true, true);
     return true;
   } catch (err) {
     log(`updater install ${err.message}`);
+    updateState = 'error';
+    updateError = err.message || 'Installation impossible';
+    tellUpdateStatus();
     return false;
   }
 }
 
-function checkUpdatesIfStashed() {
-  if (!app.isPackaged || !updaterRef || !stashed || quitting) return;
-  if (updateReady) {
-    applyUpdateNow('déjà téléchargée');
-    return;
+async function checkUpdateManual() {
+  if (!app.isPackaged || !updaterRef) {
+    updateState = 'dev';
+    updateRemoteVersion = '';
+    updateError = '';
+    tellUpdateStatus();
+    return updatePayload();
   }
-  updaterRef.checkForUpdates().catch((err) => log(`updater check ${err.message}`));
+  updateState = 'checking';
+  updateError = '';
+  tellUpdateStatus();
+  try {
+    const result = await updaterRef.checkForUpdates();
+    if (updateState === 'checking') {
+      const remote = result?.updateInfo?.version;
+      if (remote && remote !== app.getVersion()) {
+        updateState = 'available';
+        updateRemoteVersion = remote;
+      } else {
+        updateState = 'latest';
+        updateRemoteVersion = '';
+      }
+      tellUpdateStatus();
+    }
+  } catch (err) {
+    updateState = 'error';
+    updateError = err.message || 'Vérification impossible';
+    tellUpdateStatus();
+  }
+  return updatePayload();
 }
 
-function scheduleUpdateAfterStash() {
-  if (!app.isPackaged || !updaterRef) return;
-  clearStashUpdateTimers();
-  // 10 s après Masquer, puis toutes les 20 min tant que c’est masqué.
-  stashUpdateTimer = setTimeout(() => {
-    stashUpdateTimer = null;
-    checkUpdatesIfStashed();
-  }, UPDATE_AFTER_STASH_MS);
-  stashCheckInterval = setInterval(checkUpdatesIfStashed, UPDATE_WHILE_STASHED_MS);
+async function installUpdateManual() {
+  if (!app.isPackaged || !updaterRef) {
+    return { ok: false, ...updatePayload() };
+  }
+  if (updateReady || updateState === 'ready') {
+    applyManualUpdate();
+    return { ok: true, ...updatePayload() };
+  }
+  if (updateState !== 'available' && !updateRemoteVersion) {
+    await checkUpdateManual();
+  }
+  if (updateState !== 'available' && updateState !== 'ready') {
+    return { ok: false, ...updatePayload() };
+  }
+  updateState = 'downloading';
+  tellUpdateStatus();
+  try {
+    await updaterRef.downloadUpdate();
+    return { ok: true, ...updatePayload() };
+  } catch (err) {
+    updateState = 'error';
+    updateError = err.message || 'Téléchargement impossible';
+    tellUpdateStatus();
+    return { ok: false, ...updatePayload() };
+  }
 }
 
 function setupUpdater() {
   if (!app.isPackaged) {
+    updateState = 'dev';
     log('updater off (app non packagée — npm start ne reçoit pas les màj GitHub)');
     return;
   }
@@ -789,22 +839,46 @@ function setupUpdater() {
       provider: 'generic',
       url: 'https://github.com/Michtigris/D-coMiniCon/releases/latest/download/'
     });
-    autoUpdater.autoDownload = true;
-    // Pas d’install à la fermeture manuelle : seulement quand l’app est masquée.
+    // Aucune màj auto : check / download / install seulement sur action utilisateur.
+    autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.logger = { info: log, warn: log, error: log };
-    autoUpdater.on('checking-for-update', () => log(`updater check v${app.getVersion()} (masqué=${stashed})`));
-    autoUpdater.on('update-available', (info) => log(`updater dispo ${info?.version || '?'}`));
-    autoUpdater.on('update-not-available', () => log('updater déjà à jour'));
+    autoUpdater.on('checking-for-update', () => {
+      updateState = 'checking';
+      log(`updater check v${app.getVersion()}`);
+      tellUpdateStatus();
+    });
+    autoUpdater.on('update-available', (info) => {
+      updateState = 'available';
+      updateRemoteVersion = info?.version || '';
+      log(`updater dispo ${updateRemoteVersion || '?'}`);
+      tellUpdateStatus();
+    });
+    autoUpdater.on('update-not-available', () => {
+      updateState = 'latest';
+      updateRemoteVersion = '';
+      log('updater déjà à jour');
+      tellUpdateStatus();
+    });
+    autoUpdater.on('download-progress', () => {
+      updateState = 'downloading';
+      tellUpdateStatus();
+    });
     autoUpdater.on('update-downloaded', (info) => {
       updateReady = true;
+      updateState = 'ready';
+      updateRemoteVersion = info?.version || updateRemoteVersion;
       backupProfile();
-      log(`Mise à jour téléchargée ${info?.version || ''}`);
-      if (stashed) applyUpdateNow('app masquée');
-      else log('Màj en attente — uniquement après Masquer');
+      log(`Mise à jour téléchargée ${updateRemoteVersion || ''}`);
+      tellUpdateStatus();
+      applyManualUpdate();
     });
-    autoUpdater.on('error', (err) => log(`updater ${err.message}`));
-    // Aucun check tant que l’app est visible — démarré seulement via scheduleUpdateAfterStash().
+    autoUpdater.on('error', (err) => {
+      updateState = 'error';
+      updateError = err.message || 'Erreur màj';
+      log(`updater ${updateError}`);
+      tellUpdateStatus();
+    });
   } catch (err) {
     log(`updater ${err.message}`);
   }
@@ -845,6 +919,9 @@ function registerIpc() {
   });
   ipcMain.on('drag:begin', () => beginDrag());
   ipcMain.on('menu:popup', () => popupAppMenu());
+  ipcMain.on('bar:expand', (_event, on) => setBarExpanded(!!on));
+  ipcMain.handle('update:check', () => checkUpdateManual());
+  ipcMain.handle('update:install', () => installUpdateManual());
   ipcMain.handle('game:hide', () => hideGame());
   ipcMain.handle('chat:toggle', () => toggleChatWindow());
   ipcMain.handle('chat:show', () => {
