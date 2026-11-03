@@ -67,10 +67,10 @@ button:disabled { cursor: default; opacity: 0.45; }
   color: var(--muted);
 }
 
-/* Mascotte : tête qui claque façon Canadiens South Park */
+/* Mascotte : haut de tête qui se soulève (Canadiens South Park), pas une rotation latérale */
 .buddy {
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -80,40 +80,44 @@ button:disabled { cursor: default; opacity: 0.45; }
   flex-shrink: 0;
   cursor: pointer;
 }
-.buddy:hover { background: transparent; box-shadow: none; transform: scale(1.06); }
+.buddy:hover { background: transparent; box-shadow: none; }
 .buddy-stage {
   position: relative;
   display: block;
-  width: 40px;
-  height: 40px;
-  perspective: 120px;
+  width: 56px;
+  height: 56px;
+  perspective: 220px;
+  transform-style: preserve-3d;
 }
 .buddy-top,
 .buddy-bottom {
   position: absolute;
   left: 0;
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   background: url("../assets/icon.png") center / contain no-repeat;
   pointer-events: none;
 }
 .buddy-top {
   top: 0;
-  clip-path: inset(0 0 38% 0);
-  transform-origin: 50% 62%;
+  /* coupe au niveau de la bouche / charnière */
+  clip-path: inset(0 0 36% 0);
+  transform-origin: 50% 64%;
+  transform: rotateX(0deg);
   z-index: 2;
+  backface-visibility: hidden;
 }
 .buddy-bottom {
   top: 0;
-  clip-path: inset(62% 0 0 0);
+  clip-path: inset(64% 0 0 0);
   z-index: 1;
 }
 .buddy.talking .buddy-top {
-  animation: canadian-flap 0.14s ease-in-out infinite alternate;
+  animation: canadian-lid 0.16s ease-in-out infinite alternate;
 }
-@keyframes canadian-flap {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(-22deg); }
+@keyframes canadian-lid {
+  from { transform: rotateX(0deg) translateY(0); }
+  to { transform: rotateX(-48deg) translateY(-2px); }
 }
 .tag {
   color: var(--muted);
