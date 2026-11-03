@@ -1,20 +1,27 @@
-; Installeur simple — pas d'ExecWait (ça gelait à 90 %), pas de lancement pendant l'install.
+; Installeur / mise à jour — remplace toute ancienne copie (Local + Program Files).
 
 !include "LogicLib.nsh"
 
 !macro customHeader
-  !define MUI_FINISHPAGE_TITLE "Installation réussie"
-  !define MUI_FINISHPAGE_TEXT "DécoMiniCon est installé.$\r$\n$\r$\nPour l'ouvrir : tape A N G E sur le clavier (à la suite, moins de 4 secondes)."
+  !define MUI_FINISHPAGE_TITLE "Mise à jour réussie"
+  !define MUI_FINISHPAGE_TEXT "DécoMiniCon est à jour.$\r$\n$\r$\nPour l'ouvrir : tape A N G E sur le clavier."
   !define MUI_FINISHPAGE_BUTTON "Terminer"
 !macroend
 
 !macro customInit
-  ; Ferme l'app si elle tourne, puis efface les vieux dossiers (sans lancer l'ancien désinstalleur).
   ExecWait 'taskkill /F /IM "DécoMiniCon.exe"'
   ExecWait 'taskkill /F /IM "decominicon.exe"'
-  Sleep 500
+  Sleep 600
+
+  ; Anciennes installs (user + machine).
   RMDir /r "$LOCALAPPDATA\Programs\DécoMiniCon"
   RMDir /r "$LOCALAPPDATA\Programs\decominicon"
+  RMDir /r "$PROGRAMFILES\DécoMiniCon"
+  RMDir /r "$PROGRAMFILES\decominicon"
+  RMDir /r "$PROGRAMFILES64\DécoMiniCon"
+  RMDir /r "$PROGRAMFILES64\decominicon"
+  ; Cache màj bloqué / obsolète.
+  RMDir /r "$LOCALAPPDATA\decominicon-updater"
 !macroend
 
 !macro customInstall

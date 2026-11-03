@@ -1,7 +1,7 @@
 {
   "name": "decominicon",
   "productName": "DécoMiniCon",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "description": "Conversation discrète : s’ouvre avec A N G E, sans raccourci bureau.",
   "main": "electron/main.js",
@@ -36,7 +36,7 @@
     ],
     "compression": "normal",
     "electronLanguages": ["fr", "en-US"],
-    "artifactName": "Decominicon-Install-${version}.${ext}",
+    "artifactName": "Decominicon-MettreAJour-${version}.${ext}",
     "directories": {
       "output": "build",
       "buildResources": "assets"

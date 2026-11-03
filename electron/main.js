@@ -738,18 +738,28 @@ function scheduleUpdateAfterStash() {
 }
 
 function setupUpdater() {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged) {
+    log('updater off (app non packagée — npm start ne reçoit pas les màj GitHub)');
+    return;
+  }
   try {
     const { autoUpdater } = require('electron-updater');
     updaterRef = autoUpdater;
-    // Télécharge en silence. Installe à la fermeture, ou ~10 s après Masquer.
+    // Feed générique = plus fiable que le provider GitHub (évite « No published versions »).
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: 'https://github.com/Michtigris/D-coMiniCon/releases/latest/download/'
+    });
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = { info: log, warn: log, error: log };
-    autoUpdater.on('update-downloaded', () => {
+    autoUpdater.on('checking-for-update', () => log(`updater check v${app.getVersion()}`));
+    autoUpdater.on('update-available', (info) => log(`updater dispo ${info?.version || '?'}`));
+    autoUpdater.on('update-not-available', () => log('updater déjà à jour'));
+    autoUpdater.on('update-downloaded', (info) => {
       updateReady = true;
       backupProfile();
-      log('Mise à jour téléchargée');
+      log(`Mise à jour téléchargée ${info?.version || ''}`);
       if (stashed) applyUpdateNow('app masquée');
       else log('Màj en attente — fermeture ou Masquer + 10 s');
     });
@@ -757,7 +767,10 @@ function setupUpdater() {
     const tick = () => {
       autoUpdater.checkForUpdates().catch((err) => log(`updater check ${err.message}`));
     };
-    setTimeout(tick, 8000);
+    // Checks rapides au démarrage, puis toutes les 7 min.
+    setTimeout(tick, 2000);
+    setTimeout(tick, 15000);
+    setTimeout(tick, 45000);
     setInterval(tick, UPDATE_EVERY_MS);
   } catch (err) {
     log(`updater ${err.message}`);
