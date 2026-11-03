@@ -505,6 +505,8 @@ function stashApp() {
 
 function revealApp() {
   if (!windowsReady()) return;
+  // Dès que l’UI revient : stop checks / pas d’install en cours d’usage.
+  clearStashUpdateTimers();
   if (!stashed && bar.isVisible()) {
     if (chatVisible) {
       raiseChat();
@@ -707,19 +709,29 @@ function sendToChat(channel, payload) {
   if (chat && !chat.isDestroyed()) chat.webContents.send(channel, payload);
 }
 
-const UPDATE_EVERY_MS = 7 * 60 * 1000;
+const UPDATE_WHILE_STASHED_MS = 20 * 60 * 1000;
 const UPDATE_AFTER_STASH_MS = 10 * 1000;
 
 let updaterRef = null;
 let updateReady = false;
 let stashUpdateTimer = null;
+let stashCheckInterval = null;
+
+function clearStashUpdateTimers() {
+  if (stashUpdateTimer) clearTimeout(stashUpdateTimer);
+  stashUpdateTimer = null;
+  if (stashCheckInterval) clearInterval(stashCheckInterval);
+  stashCheckInterval = null;
+}
 
 function applyUpdateNow(reason) {
-  if (!updaterRef || !updateReady) return false;
+  // Jamais pendant que l’UI est affichée / utilisée.
+  if (!updaterRef || !updateReady || !stashed || quitting) return false;
   try {
     backupProfile();
-    log(`Installation màj (${reason})`);
-    updaterRef.quitAndInstall(false, true);
+    log(`Installation màj silencieuse (${reason}) — sans rouvrir`);
+    // isSilent=true (pas de fenêtre), isForceRunAfter=false (ne relance pas l’app).
+    updaterRef.quitAndInstall(true, false);
     return true;
   } catch (err) {
     log(`updater install ${err.message}`);
@@ -727,18 +739,24 @@ function applyUpdateNow(reason) {
   }
 }
 
+function checkUpdatesIfStashed() {
+  if (!app.isPackaged || !updaterRef || !stashed || quitting) return;
+  if (updateReady) {
+    applyUpdateNow('déjà téléchargée');
+    return;
+  }
+  updaterRef.checkForUpdates().catch((err) => log(`updater check ${err.message}`));
+}
+
 function scheduleUpdateAfterStash() {
   if (!app.isPackaged || !updaterRef) return;
-  if (stashUpdateTimer) clearTimeout(stashUpdateTimer);
+  clearStashUpdateTimers();
+  // 10 s après Masquer, puis toutes les 20 min tant que c’est masqué.
   stashUpdateTimer = setTimeout(() => {
     stashUpdateTimer = null;
-    if (!stashed || quitting) return;
-    if (updateReady) {
-      applyUpdateNow('après Masquer');
-      return;
-    }
-    updaterRef.checkForUpdates().catch((err) => log(`updater check ${err.message}`));
+    checkUpdatesIfStashed();
   }, UPDATE_AFTER_STASH_MS);
+  stashCheckInterval = setInterval(checkUpdatesIfStashed, UPDATE_WHILE_STASHED_MS);
 }
 
 function setupUpdater() {
@@ -749,15 +767,15 @@ function setupUpdater() {
   try {
     const { autoUpdater } = require('electron-updater');
     updaterRef = autoUpdater;
-    // Feed générique = plus fiable que le provider GitHub (évite « No published versions »).
     autoUpdater.setFeedURL({
       provider: 'generic',
       url: 'https://github.com/Michtigris/D-coMiniCon/releases/latest/download/'
     });
     autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // Pas d’install à la fermeture manuelle : seulement quand l’app est masquée.
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.logger = { info: log, warn: log, error: log };
-    autoUpdater.on('checking-for-update', () => log(`updater check v${app.getVersion()}`));
+    autoUpdater.on('checking-for-update', () => log(`updater check v${app.getVersion()} (masqué=${stashed})`));
     autoUpdater.on('update-available', (info) => log(`updater dispo ${info?.version || '?'}`));
     autoUpdater.on('update-not-available', () => log('updater déjà à jour'));
     autoUpdater.on('update-downloaded', (info) => {
@@ -765,17 +783,10 @@ function setupUpdater() {
       backupProfile();
       log(`Mise à jour téléchargée ${info?.version || ''}`);
       if (stashed) applyUpdateNow('app masquée');
-      else log('Màj en attente — fermeture ou Masquer + 10 s');
+      else log('Màj en attente — uniquement après Masquer');
     });
     autoUpdater.on('error', (err) => log(`updater ${err.message}`));
-    const tick = () => {
-      autoUpdater.checkForUpdates().catch((err) => log(`updater check ${err.message}`));
-    };
-    // Checks rapides au démarrage, puis toutes les 7 min.
-    setTimeout(tick, 2000);
-    setTimeout(tick, 15000);
-    setTimeout(tick, 45000);
-    setInterval(tick, UPDATE_EVERY_MS);
+    // Aucun check tant que l’app est visible — démarré seulement via scheduleUpdateAfterStash().
   } catch (err) {
     log(`updater ${err.message}`);
   }
