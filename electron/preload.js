@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('deco', {
   readHistory: (pair) => ipcRenderer.invoke('history:read', pair),
   saveHistory: (pair, messages) => ipcRenderer.invoke('history:save', pair, messages),
   beginDrag: () => ipcRenderer.send('drag:begin'),
+  endDrag: () => ipcRenderer.send('drag:end'),
   hideGame: () => ipcRenderer.invoke('game:hide'),
   toggleChat: () => ipcRenderer.invoke('chat:toggle'),
   showChat: () => ipcRenderer.invoke('chat:show'),

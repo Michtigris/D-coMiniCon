@@ -138,13 +138,27 @@ function hideStatus() {
   window.deco.expandBar(false);
 }
 
+let updateBusy = false;
+let lastUpdateCheckAt = 0;
+
 async function runUpdateCheck() {
+  if (updateBusy) return;
+  const now = Date.now();
+  // Évite de spammer « Erreur màj » à chaque clic
+  if (now - lastUpdateCheckAt < 20000 && updateInfo.status === 'error') {
+    renderStatus(updateInfo);
+    return;
+  }
+  updateBusy = true;
+  lastUpdateCheckAt = now;
   renderStatus({ status: 'checking', current: updateInfo.current });
   try {
     const info = await window.deco.checkUpdate();
     renderStatus(info);
   } catch (err) {
     renderStatus({ status: 'error', message: err?.message || 'Vérification impossible' });
+  } finally {
+    updateBusy = false;
   }
 }
 
@@ -171,22 +185,25 @@ logo.addEventListener('pointerleave', () => {
 });
 
 logo.addEventListener('pointerdown', (event) => {
-  event.preventDefault();
   try {
     logo.blur();
   } catch {
     // ignore
   }
   if (event.button === 2) {
+    event.preventDefault();
     cancelSingleClick();
-    window.deco.toggleChat();
     return;
   }
   if (event.button !== 0) return;
   didDrag = false;
   pressing = true;
   press = { x: event.screenX, y: event.screenY };
-  logo.setPointerCapture(event.pointerId);
+  try {
+    logo.setPointerCapture(event.pointerId);
+  } catch {
+    // ignore
+  }
   finishAnimForGrab();
 });
 
@@ -212,6 +229,7 @@ logo.addEventListener('pointerup', (event) => {
   press = null;
   didDrag = false;
   pressing = false;
+  window.deco.endDrag();
 
   // Relance seulement après lâcher + toujours sur le logo
   if (hovering) startFlipLoop();
@@ -229,6 +247,7 @@ logo.addEventListener('pointercancel', () => {
   didDrag = false;
   pressing = false;
   cancelSingleClick();
+  window.deco.endDrag();
   if (hovering) startFlipLoop();
   else {
     pausedForGrab = false;
@@ -245,11 +264,15 @@ logo.addEventListener('dblclick', (event) => {
   hovering = false;
   stopAnim();
   hideStatus();
+  window.deco.endDrag();
   window.deco.hideGame();
 });
 
 logo.addEventListener('contextmenu', (event) => {
   event.preventDefault();
+  cancelSingleClick();
+  hideStatus();
+  window.deco.toggleChat();
 });
 
 statusBtn.addEventListener('click', async (event) => {

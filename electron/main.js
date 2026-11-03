@@ -548,6 +548,7 @@ function finishDrag() {
 function beginDrag() {
   finishDrag();
   syncMenuState();
+  wakeBar();
   dragging = true;
   const start = screen.getCursorScreenPoint();
   const origin = stackPos();
@@ -704,23 +705,39 @@ function stashApp() {
   updateTrayTip();
 }
 
+function wakeBar() {
+  if (!bar || bar.isDestroyed()) return;
+  try {
+    bar.setIgnoreMouseEvents(false);
+  } catch {
+    // ignore
+  }
+  if (!bar.isVisible()) bar.show();
+  else bar.showInactive();
+  bar.setAlwaysOnTop(true, 'screen-saver');
+  try {
+    bar.moveTop();
+  } catch {
+    // ignore
+  }
+  tellBar();
+}
+
 function revealApp() {
   if (!windowsReady()) return;
   if (!stashed && bar.isVisible()) {
+    wakeBar();
     if (chatVisible) {
       raiseChat();
       chat.show();
       chat.focus();
-    } else {
-      bar.moveTop();
     }
     return;
   }
   stashed = false;
   const pos = savedPosition();
   layout(pos.x, pos.y);
-  bar.show();
-  bar.setAlwaysOnTop(true, 'screen-saver');
+  wakeBar();
   if (chatVisible) {
     raiseChat();
     chat.show();
@@ -836,16 +853,11 @@ function createWindows() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: false,
-    // Pas de focus Windows (= pas de bordure accent orange au clic / Shift).
-    focusable: false
+    // focusable: true — sinon après ANGE/Masquer, drag & clic droit peuvent mourir sur Windows.
+    focusable: true
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  try {
-    bar.setFocusable(false);
-  } catch {
-    // ignore
-  }
   const index = path.join(__dirname, '..', 'src', 'index.html');
   chat.loadFile(index, { query: { view: 'chat' } });
   bar.loadFile(index, { query: { view: 'bar' } });
@@ -982,6 +994,8 @@ function applyManualUpdate() {
   }
 }
 
+let updateCheckPromise = null;
+
 async function checkUpdateManual() {
   if (!app.isPackaged || !updaterRef) {
     updateState = 'dev';
@@ -990,28 +1004,39 @@ async function checkUpdateManual() {
     tellUpdateStatus();
     return updatePayload();
   }
+  if (updateCheckPromise) return updateCheckPromise;
   updateState = 'checking';
   updateError = '';
   tellUpdateStatus();
-  try {
-    const result = await updaterRef.checkForUpdates();
-    if (updateState === 'checking') {
-      const remote = result?.updateInfo?.version;
-      if (remote && remote !== app.getVersion()) {
-        updateState = 'available';
-        updateRemoteVersion = remote;
-      } else {
-        updateState = 'latest';
-        updateRemoteVersion = '';
+  updateCheckPromise = (async () => {
+    try {
+      const result = await Promise.race([
+        updaterRef.checkForUpdates(),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Délai dépassé')), 10000);
+        })
+      ]);
+      if (updateState === 'checking') {
+        const remote = result?.updateInfo?.version;
+        if (remote && remote !== app.getVersion()) {
+          updateState = 'available';
+          updateRemoteVersion = remote;
+        } else {
+          updateState = 'latest';
+          updateRemoteVersion = '';
+        }
+        tellUpdateStatus();
       }
+    } catch (err) {
+      updateState = 'error';
+      updateError = err.message || 'Vérification impossible';
       tellUpdateStatus();
+    } finally {
+      updateCheckPromise = null;
     }
-  } catch (err) {
-    updateState = 'error';
-    updateError = err.message || 'Vérification impossible';
-    tellUpdateStatus();
-  }
-  return updatePayload();
+    return updatePayload();
+  })();
+  return updateCheckPromise;
 }
 
 async function installUpdateManual() {
@@ -1133,12 +1158,16 @@ function registerIpc() {
     return true;
   });
   ipcMain.on('drag:begin', () => beginDrag());
+  ipcMain.on('drag:end', () => finishDrag());
   ipcMain.on('menu:popup', () => popupAppMenu());
   ipcMain.on('bar:expand', (_event, on) => setBarExpanded(!!on));
   ipcMain.handle('update:check', () => checkUpdateManual());
   ipcMain.handle('update:install', () => installUpdateManual());
   ipcMain.handle('game:hide', () => hideGame());
-  ipcMain.handle('chat:toggle', () => toggleChatWindow());
+  ipcMain.handle('chat:toggle', () => {
+    wakeBar();
+    return toggleChatWindow();
+  });
   ipcMain.handle('chat:show', () => {
     if (!menuIsLinked()) toggleChatWindow();
     else revealApp();
