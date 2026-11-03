@@ -658,9 +658,7 @@ function createWindows() {
   });
   bar.webContents.on('did-finish-load', () => tellBar());
 
-  chat.on('blur', () => {
-    if (profile.pseudo && !dragging) sinkChat();
-  });
+  // Pas de sink au blur : défocus (clic ailleurs) ne doit pas fermer / enfoncer le panneau.
   chat.on('close', (event) => {
     if (!quitting) {
       event.preventDefault();
