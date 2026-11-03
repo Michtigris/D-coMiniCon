@@ -496,6 +496,7 @@ function stashApp() {
   if (chat && !chat.isDestroyed()) chat.hide();
   if (bar && !bar.isDestroyed()) bar.hide();
   updateTrayTip();
+  scheduleUpdateAfterStash();
 }
 
 function revealApp() {
@@ -705,19 +706,54 @@ function sendToChat(channel, payload) {
 }
 
 const UPDATE_EVERY_MS = 7 * 60 * 1000;
+const UPDATE_AFTER_STASH_MS = 10 * 1000;
+
+let updaterRef = null;
+let updateReady = false;
+let stashUpdateTimer = null;
+
+function applyUpdateNow(reason) {
+  if (!updaterRef || !updateReady) return false;
+  try {
+    backupProfile();
+    log(`Installation màj (${reason})`);
+    updaterRef.quitAndInstall(false, true);
+    return true;
+  } catch (err) {
+    log(`updater install ${err.message}`);
+    return false;
+  }
+}
+
+function scheduleUpdateAfterStash() {
+  if (!app.isPackaged || !updaterRef) return;
+  if (stashUpdateTimer) clearTimeout(stashUpdateTimer);
+  stashUpdateTimer = setTimeout(() => {
+    stashUpdateTimer = null;
+    if (!stashed || quitting) return;
+    if (updateReady) {
+      applyUpdateNow('après Masquer');
+      return;
+    }
+    updaterRef.checkForUpdates().catch((err) => log(`updater check ${err.message}`));
+  }, UPDATE_AFTER_STASH_MS);
+}
 
 function setupUpdater() {
   if (!app.isPackaged) return;
   try {
     const { autoUpdater } = require('electron-updater');
-    // Télécharge en silence, installe seulement à la fermeture — pas de relance forcée
-    // (évite que l’antivirus bloque un Setup.exe lancé automatiquement).
+    updaterRef = autoUpdater;
+    // Télécharge en silence. Installe à la fermeture, ou ~10 s après Masquer.
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = { info: log, warn: log, error: log };
     autoUpdater.on('update-downloaded', () => {
+      updateReady = true;
       backupProfile();
-      log('Mise à jour téléchargée — sera appliquée à la prochaine fermeture');
+      log('Mise à jour téléchargée');
+      if (stashed) applyUpdateNow('app masquée');
+      else log('Màj en attente — fermeture ou Masquer + 10 s');
     });
     autoUpdater.on('error', (err) => log(`updater ${err.message}`));
     const tick = () => {
