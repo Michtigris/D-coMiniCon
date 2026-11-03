@@ -395,6 +395,17 @@ function chatIsOnScreen() {
   );
 }
 
+/** Centre du menu dans l’aire utile — évite un panneau « ouvert » hors écran. */
+function chatFrameOnScreen() {
+  if (!chatIsOnScreen()) return false;
+  const b = chat.getBounds();
+  if (!b.width || !b.height) return false;
+  const cx = b.x + b.width / 2;
+  const cy = b.y + b.height / 2;
+  const area = screen.getDisplayNearestPoint({ x: Math.round(cx), y: Math.round(cy) }).workArea;
+  return cx >= area.x && cx <= area.x + area.width && cy >= area.y && cy <= area.y + area.height;
+}
+
 /** Aligne le flag chatVisible sur la fenêtre réelle. */
 function syncMenuState() {
   if (stashed || !chat || chat.isDestroyed()) return;
@@ -421,8 +432,9 @@ function clampBar(barX, barY) {
   let x = Math.round(barX);
   let y = Math.round(barY);
 
-  // Réserver l’espace menu seulement s’il est vraiment affiché.
-  if (chatIsOnScreen()) {
+  // Réserver l’espace dès qu’on VEUT le menu (pas seulement s’il est déjà show).
+  // Sinon à l’ouverture près d’un bord le panneau naît hors écran → clic droit « mort ».
+  if (chatVisible) {
     let chatO = chatOriginFor(x, y);
     if (chatO.x < area.x) x += area.x - chatO.x;
     if (chatO.y < area.y) y += area.y - chatO.y;
@@ -452,7 +464,8 @@ function cornerPosition() {
 function raiseChat() {
   if (!chat || chat.isDestroyed() || !chatVisible) return;
   try {
-    chat.setAlwaysOnTop(false);
+    // Court alwaysOnTop pour remonter devant les autres fenêtres, puis on retire.
+    chat.setAlwaysOnTop(true, 'pop-up-menu');
   } catch {
     // ignore
   }
@@ -462,8 +475,29 @@ function raiseChat() {
     log(`raise ${err.message}`);
   }
   if (!chat.isVisible()) chat.show();
-  else chat.moveTop();
+  else {
+    chat.show();
+    chat.moveTop();
+  }
+  try {
+    chat.focus();
+  } catch {
+    // ignore
+  }
   chatSunk = false;
+  setTimeout(() => {
+    if (!chat || chat.isDestroyed() || !chatVisible || chatSunk) return;
+    try {
+      chat.setAlwaysOnTop(false);
+    } catch {
+      // ignore
+    }
+    try {
+      if (win32) win32.raise(chat);
+    } catch {
+      // ignore
+    }
+  }, 250);
   tellBar();
 }
 
@@ -489,7 +523,10 @@ function layout(barX, barY) {
 }
 
 function openChatAroundLogo() {
+  stashed = false;
+  chatSunk = false;
   setBarExpanded(false);
+  wakeBar();
   const anchor = barBounds();
   const dir = decideOpenDir(anchor.x, anchor.y);
   openUp = dir.openUp;
@@ -497,30 +534,25 @@ function openChatAroundLogo() {
   chatVisible = true;
   layout(anchor.x, anchor.y);
   raiseChat();
+  const b = chat && !chat.isDestroyed() ? chat.getBounds() : null;
+  log(`menu open ${b ? `${b.x},${b.y} ${b.width}x${b.height}` : '?'} up=${openUp} left=${openLeft}`);
 }
 
 function toggleChatWindow() {
+  syncMenuState();
   const anchor = barBounds();
-  // Menu non lié (fermé ou enfoncé) → un clic ouvre / remonte.
-  if (chatVisible && !menuIsLinked()) {
-    if (!chat || chat.isDestroyed() || !chat.isVisible()) {
-      openChatAroundLogo();
-    } else {
-      raiseChat();
-    }
+  // Pas clairement visible à l’écran → toujours OUVRIR (évite fermer un fantôme hors écran).
+  if (!menuIsLinked()) {
+    openChatAroundLogo();
     savePosition();
     return true;
   }
-  if (!chatVisible) {
-    openChatAroundLogo();
-  } else {
-    chatVisible = false;
-    chatSunk = false;
-    setBarExpanded(false);
-    layout(anchor.x, anchor.y);
-  }
+  chatVisible = false;
+  chatSunk = false;
+  setBarExpanded(false);
+  layout(anchor.x, anchor.y);
   savePosition();
-  return chatVisible;
+  return false;
 }
 
 function savePosition() {
@@ -786,7 +818,7 @@ function menuIsOpen() {
 }
 
 function menuIsLinked() {
-  return menuIsOpen() && !chatSunk;
+  return menuIsOpen() && !chatSunk && chatFrameOnScreen();
 }
 
 function tellBar(extra = {}) {

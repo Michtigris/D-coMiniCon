@@ -190,12 +190,27 @@ logo.addEventListener('pointerleave', () => {
 
 let rightClickAt = 0;
 function onRightClick(event) {
-  if (event) event.preventDefault();
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
   const now = Date.now();
   // pointerdown + contextmenu peuvent tous les deux partir → un seul toggle
   if (now - rightClickAt < 400) return;
   rightClickAt = now;
+  cancelSingleClick();
   dismissStatus();
+  // Libère un éventuel grab gauche qui bloquait les clics suivants
+  pressing = false;
+  pausedForGrab = false;
+  press = null;
+  didDrag = false;
+  try {
+    if (event?.pointerId != null) logo.releasePointerCapture(event.pointerId);
+  } catch {
+    // ignore
+  }
+  window.deco.endDrag();
   window.deco.toggleChat();
 }
 
