@@ -195,6 +195,17 @@ logo.addEventListener('pointerleave', () => {
   closeTimer = setTimeout(stopAnim, 160);
 });
 
+let rightClickAt = 0;
+function onRightClick(event) {
+  if (event) event.preventDefault();
+  const now = Date.now();
+  // pointerdown + contextmenu peuvent tous les deux partir → un seul toggle
+  if (now - rightClickAt < 400) return;
+  rightClickAt = now;
+  dismissStatus();
+  window.deco.toggleChat();
+}
+
 logo.addEventListener('pointerdown', (event) => {
   try {
     logo.blur();
@@ -202,8 +213,8 @@ logo.addEventListener('pointerdown', (event) => {
     // ignore
   }
   if (event.button === 2) {
-    event.preventDefault();
-    cancelSingleClick();
+    // preventDefault peut bloquer contextmenu : on toggle ici directement
+    onRightClick(event);
     return;
   }
   if (event.button !== 0) return;
@@ -216,6 +227,10 @@ logo.addEventListener('pointerdown', (event) => {
     // ignore
   }
   finishAnimForGrab();
+});
+
+logo.addEventListener('auxclick', (event) => {
+  if (event.button === 2) onRightClick(event);
 });
 
 logo.addEventListener('pointermove', (event) => {
@@ -278,10 +293,7 @@ logo.addEventListener('dblclick', (event) => {
 });
 
 logo.addEventListener('contextmenu', (event) => {
-  event.preventDefault();
-  // Annule la vérif màj pour ne pas laisser une bande fantôme à côté du logo
-  dismissStatus();
-  window.deco.toggleChat();
+  onRightClick(event);
 });
 
 statusBtn.addEventListener('click', async (event) => {

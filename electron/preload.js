@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('deco', {
   beginDrag: () => ipcRenderer.send('drag:begin'),
   endDrag: () => ipcRenderer.send('drag:end'),
   hideGame: () => ipcRenderer.invoke('game:hide'),
-  toggleChat: () => ipcRenderer.invoke('chat:toggle'),
+  toggleChat: () => ipcRenderer.send('chat:toggle'),
   showChat: () => ipcRenderer.invoke('chat:show'),
   snap: () => ipcRenderer.invoke('window:snap'),
   popupMenu: () => ipcRenderer.send('menu:popup'),

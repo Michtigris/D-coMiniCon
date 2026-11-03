@@ -1166,6 +1166,10 @@ function registerIpc() {
   ipcMain.handle('update:check', () => checkUpdateManual());
   ipcMain.handle('update:install', () => installUpdateManual());
   ipcMain.handle('game:hide', () => hideGame());
+  ipcMain.on('chat:toggle', () => {
+    wakeBar();
+    toggleChatWindow();
+  });
   ipcMain.handle('chat:toggle', () => {
     wakeBar();
     return toggleChatWindow();
