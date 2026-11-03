@@ -639,6 +639,9 @@ function hideGame() {
       game = { ok: false, reason: 'Impossible de masquer cette fenêtre.' };
     }
   }
+  // Masquer = ferme aussi le menu. Au retour : logo seul ; clic droit rouvre la page d’avant.
+  chatVisible = false;
+  chatSunk = false;
   stashApp();
   const result = {
     ok: true,
