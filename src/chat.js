@@ -129,12 +129,17 @@ function shell() {
         <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
         <label>Mot de passe <input name="password" type="password" maxlength="64" placeholder="Nouveau mdp (optionnel)" autocomplete="new-password" /></label>
         <label>Confirmer <input name="password2" type="password" maxlength="64" placeholder="Si tu changes le mdp" autocomplete="new-password" /></label>
-        <div id="server-settings">
+        <div id="server-settings" hidden>
           <div class="section">Serveur</div>
           <label>Adresse <input name="server" placeholder="ex. 192.168.1.20:3847" /></label>
           <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
         </div>
         <div id="share-settings"></div>
+        <div id="open-combo-settings" hidden>
+          <div class="section">Ouverture secrète</div>
+          <label>Mot-clé <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" /></label>
+          <p class="hint" id="combo-hint">Par défaut ANGE. Silence 0,5 s avant et après. Temps max : 0,5 + 0,4 × lettres.</p>
+        </div>
         <button type="submit" class="primary">Enregistrer</button>
         <p class="hint" id="version"></p>
         <button type="button" class="ghost" id="close-settings">Fermer</button>
@@ -205,6 +210,12 @@ function renderChrome() {
   const offline = state.status !== 'online';
   if (input) input.disabled = offline;
   if (send) send.disabled = offline;
+  const gear = document.getElementById('gear');
+  if (gear) gear.hidden = currentView() === 'setup';
+  const settings = document.getElementById('settings');
+  if (settings && !settings.hidden && currentView() === 'setup') {
+    settings.hidden = true;
+  }
   pushBadge();
 }
 
@@ -243,6 +254,10 @@ function actionButton(label, onclick) {
 
 function hasLocalAccount() {
   return !!(state.profile?.userId && state.profile?.token && state.profile?.pseudo);
+}
+
+function isInSalon() {
+  return !!(state.me && !state.forceSetup);
 }
 
 function mountSetup() {
@@ -1030,8 +1045,8 @@ async function applyLink(payload, { quiet = false } = {}) {
 function openSettings() {
   const form = document.getElementById('settings');
   if (!form) return;
-  // Pas de panneau réglages pendant la création de compte : le setup gère déjà l’étape 1.
-  if (!hasLocalAccount()) {
+  // Setup = uniquement compte / serveur via les écrans dédiés — pas le panneau réglages.
+  if (!hasLocalAccount() || currentView() === 'setup' || !isInSalon()) {
     form.hidden = true;
     return;
   }
@@ -1041,9 +1056,14 @@ function openSettings() {
   form.password2.value = '';
   form.server.value = state.profile.serverUrl || '';
   form.code.value = state.profile.roomCode || '';
+  form.openCombo.value = state.profile.openCombo || 'ANGE';
   const serverBlock = document.getElementById('server-settings');
+  const comboBlock = document.getElementById('open-combo-settings');
   if (serverBlock) serverBlock.hidden = false;
+  if (comboBlock) comboBlock.hidden = false;
   form.server.required = true;
+  updateComboHint(form.openCombo.value);
+  form.openCombo.oninput = () => updateComboHint(form.openCombo.value);
   document.getElementById('version').textContent = `Compte ${state.profile.pseudo || '—'} · multi-PC OK · v${state.version}`;
   const share = document.getElementById('share-settings');
   share.replaceChildren();
@@ -1056,6 +1076,15 @@ function openSettings() {
   window.deco.saveProfile({ settingsOpen: true }).then((profile) => {
     state.profile = profile;
   });
+}
+
+function updateComboHint(raw) {
+  const el = document.getElementById('combo-hint');
+  if (!el) return;
+  const word = String(raw || 'ANGE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'ANGE';
+  const n = Math.max(2, Math.min(16, word.length));
+  const win = (0.5 + 0.4 * n).toFixed(1).replace('.', ',');
+  el.textContent = `Mot « ${word} » → ${win} s max pour le taper, 0,5 s de silence avant et après.`;
 }
 
 function closeSettings() {
@@ -1090,7 +1119,17 @@ async function saveSettings(event) {
       return;
     }
   }
-  if (form.server?.value) {
+  const comboBlock = document.getElementById('open-combo-settings');
+  if (comboBlock && !comboBlock.hidden) {
+    const combo = String(form.openCombo?.value || 'ANGE').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (combo.length < 2) {
+      toast('Mot-clé trop court (2–16 lettres/chiffres).');
+      return;
+    }
+    patch.openCombo = combo.slice(0, 16);
+  }
+  const serverBlock = document.getElementById('server-settings');
+  if (serverBlock && !serverBlock.hidden && form.server?.value) {
     try {
       patch.serverUrl = normalizeServer(form.server.value);
       patch.roomCode = form.code.value.trim();
@@ -1132,9 +1171,11 @@ async function init() {
     if (state.profile.serverUrl) connect();
     else {
       state.forceSetup = true;
+      await window.deco.saveProfile({ settingsOpen: false });
+      state.profile.settingsOpen = false;
       renderBody();
     }
-    if (state.profile.settingsOpen) openSettings();
+    // Réglages (serveur / mot-clé) seulement une fois dans le salon — pas à l’écran compte.
   } else {
     state.forceSetup = true;
     await window.deco.saveProfile({ settingsOpen: false });

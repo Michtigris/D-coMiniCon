@@ -39,11 +39,66 @@ let angeTimer = null;
 let angeIndex = 0;
 let angeStarted = 0;
 let angePrev = Object.create(null);
+let angePhase = 'idle'; // idle | typing | confirm
+let angeConfirmUntil = 0;
+let angeLastNoise = 0;
+let openCombo = 'ANGE';
+let openKeys = [0x41, 0x4e, 0x47, 0x45];
 let hostInfo = { hosting: false, urls: [], self: '', port: 0 };
 let lastBadge = { connected: false, unread: 0, partner: '', call: '' };
 
-const ANGE_KEYS = [0x41, 0x4e, 0x47, 0x45]; // A N G E
-const ANGE_MS = 4000;
+const PRE_SILENCE_MS = 500;
+const POST_SILENCE_MS = 500;
+const WINDOW_BASE_MS = 500;
+const WINDOW_PER_LETTER_MS = 400;
+
+function normalizeOpenCombo(raw) {
+  const text = String(raw || 'ANGE').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (text.length < 2) return 'ANGE';
+  if (text.length > 16) return text.slice(0, 16);
+  return text;
+}
+
+function comboToKeys(text) {
+  return [...normalizeOpenCombo(text)].map((ch) => ch.charCodeAt(0));
+}
+
+function comboWindowMs(len) {
+  return WINDOW_BASE_MS + WINDOW_PER_LETTER_MS * len;
+}
+
+function applyOpenCombo(raw) {
+  openCombo = normalizeOpenCombo(raw);
+  openKeys = comboToKeys(openCombo);
+  angePhase = 'idle';
+  angeIndex = 0;
+  angeStarted = 0;
+  angeConfirmUntil = 0;
+  try {
+    refreshTrayMenu();
+  } catch {
+    updateTrayTip();
+  }
+}
+
+function openHint() {
+  return `Tape ${openCombo} pour afficher`;
+}
+
+function updateTrayTip() {
+  if (!tray) return;
+  tray.setToolTip(stashed ? `DécoMiniCon — ${openHint()}` : `DécoMiniCon — ${openCombo} si rangée`);
+}
+
+function scanKeyVks() {
+  const vks = [];
+  for (let vk = 0x08; vk <= 0x5a; vk += 1) vks.push(vk);
+  for (let vk = 0xba; vk <= 0xc0; vk += 1) vks.push(vk);
+  for (let vk = 0xdb; vk <= 0xde; vk += 1) vks.push(vk);
+  return vks;
+}
+
+const WATCH_VKS = scanKeyVks();
 
 function dataRoot() {
   const dir = app.getPath('userData');
@@ -80,6 +135,7 @@ function defaultProfile() {
     y: null,
     chatVisible: true,
     settingsOpen: false,
+    openCombo: 'ANGE',
     seen: {}
   };
 }
@@ -121,7 +177,9 @@ function restoreProfile() {
 function loadProfile() {
   restoreProfile();
   profile = { ...defaultProfile(), ...readJson(profileFile(), {}) };
+  profile.openCombo = normalizeOpenCombo(profile.openCombo);
   chatVisible = profile.chatVisible !== false;
+  applyOpenCombo(profile.openCombo);
   return profile;
 }
 
@@ -131,7 +189,13 @@ function saveProfile(patch) {
   if (!next.userId && profile.userId) next.userId = profile.userId;
   if (!next.token && profile.token) next.token = profile.token;
   if (!next.pseudo && profile.pseudo) next.pseudo = profile.pseudo;
+  if (Object.prototype.hasOwnProperty.call(next, 'openCombo') || patch?.openCombo != null) {
+    next.openCombo = normalizeOpenCombo(next.openCombo);
+  } else if (!next.openCombo) {
+    next.openCombo = openCombo || 'ANGE';
+  }
   profile = next;
+  applyOpenCombo(profile.openCombo);
   writeJson(profileFile(), profile);
   backupProfile();
   return { ...profile };
@@ -301,12 +365,19 @@ function beginDrag() {
   }, 16);
 }
 
+function resetAngeProgress() {
+  angePhase = 'idle';
+  angeIndex = 0;
+  angeStarted = 0;
+  angeConfirmUntil = 0;
+}
+
 function stopAngeWatch() {
   if (angeTimer) clearInterval(angeTimer);
   angeTimer = null;
-  angeIndex = 0;
-  angeStarted = 0;
+  resetAngeProgress();
   angePrev = Object.create(null);
+  angeLastNoise = 0;
 }
 
 function savedPosition() {
@@ -343,45 +414,71 @@ function startAngeWatch() {
   angeTimer = setInterval(() => {
     if (!win32 || quitting) return;
     const now = Date.now();
-    if (angeIndex > 0 && now - angeStarted > ANGE_MS) {
-      angeIndex = 0;
-      angeStarted = 0;
-    }
+    const keys = openKeys.length ? openKeys : comboToKeys('ANGE');
+    const windowMs = comboWindowMs(keys.length);
 
-    let pressed = null;
-    for (let vk = 0x41; vk <= 0x5a; vk += 1) {
+    // Détection des appuis (front montant) sur un large jeu de touches.
+    const edges = [];
+    for (const vk of WATCH_VKS) {
       const down = win32.keyDown(vk);
       const was = !!angePrev[vk];
       angePrev[vk] = down;
-      if (down && !was) pressed = vk;
+      if (down && !was) edges.push(vk);
     }
-    const extras = [0x08, 0x09, 0x0d, 0x20, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39];
-    for (const vk of extras) {
-      const down = win32.keyDown(vk);
-      const was = !!angePrev[vk];
-      angePrev[vk] = down;
-      if (down && !was && angeIndex > 0) {
-        angeIndex = 0;
-        angeStarted = 0;
-        pressed = null;
+    const silenceBeforePress = now - angeLastNoise >= PRE_SILENCE_MS;
+    if (edges.length) angeLastNoise = now;
+
+    if (angePhase === 'confirm') {
+      if (edges.length) {
+        resetAngeProgress();
+        return;
       }
-    }
-    if (pressed == null) return;
-
-    if (pressed === ANGE_KEYS[angeIndex]) {
-      if (angeIndex === 0) angeStarted = now;
-      angeIndex += 1;
-      if (angeIndex >= ANGE_KEYS.length) {
-        angeIndex = 0;
-        angeStarted = 0;
+      if (now >= angeConfirmUntil) {
+        resetAngeProgress();
         revealApp();
       }
-    } else if (pressed === ANGE_KEYS[0]) {
+      return;
+    }
+
+    if (angePhase === 'typing' && now - angeStarted > windowMs) {
+      resetAngeProgress();
+    }
+
+    if (!edges.length) return;
+    // Plusieurs touches d’un coup = bruit, on annule une saisie en cours.
+    if (edges.length > 1) {
+      resetAngeProgress();
+      return;
+    }
+    const pressed = edges[0];
+
+    if (angePhase === 'idle') {
+      // 1s sans touche avant la 1re lettre du mot.
+      if (pressed === keys[0] && silenceBeforePress) {
+        angePhase = 'typing';
+        angeIndex = 1;
+        angeStarted = now;
+        if (angeIndex >= keys.length) {
+          angePhase = 'confirm';
+          angeConfirmUntil = now + POST_SILENCE_MS;
+        }
+      }
+      return;
+    }
+
+    // typing
+    if (pressed === keys[angeIndex]) {
+      angeIndex += 1;
+      if (angeIndex >= keys.length) {
+        angePhase = 'confirm';
+        angeConfirmUntil = now + POST_SILENCE_MS;
+      }
+    } else if (pressed === keys[0] && silenceBeforePress) {
+      angePhase = 'typing';
       angeIndex = 1;
       angeStarted = now;
     } else {
-      angeIndex = 0;
-      angeStarted = 0;
+      resetAngeProgress();
     }
   }, 30);
 }
@@ -398,7 +495,7 @@ function stashApp() {
   finishDrag();
   if (chat && !chat.isDestroyed()) chat.hide();
   if (bar && !bar.isDestroyed()) bar.hide();
-  if (tray) tray.setToolTip('DécoMiniCon — tape ANGE pour afficher');
+  updateTrayTip();
 }
 
 function revealApp() {
@@ -426,7 +523,7 @@ function revealApp() {
   } else {
     chat.hide();
   }
-  if (tray) tray.setToolTip('DécoMiniCon — ANGE pour afficher si rangée');
+  updateTrayTip();
 }
 
 function snapToCorner() {
@@ -441,7 +538,7 @@ function snapToCorner() {
     chat.focus();
   }
   savePosition();
-  if (tray) tray.setToolTip('DécoMiniCon — ANGE pour afficher si rangée');
+  updateTrayTip();
 }
 
 function hideGame() {
@@ -455,12 +552,15 @@ function hideGame() {
     }
   }
   stashApp();
-  return {
+  const result = {
     ok: true,
     title: game && game.ok ? game.title : 'DécoMiniCon',
     stashed: true,
-    reason: 'Tape ANGE pour revenir'
+    openCombo,
+    reason: `Tape ${openCombo} pour revenir`
   };
+  if (bar && !bar.isDestroyed()) bar.webContents.send('game:result', result);
+  return result;
 }
 
 function menuIsOpen() {
@@ -577,15 +677,27 @@ function createWindows() {
 function createTray() {
   const image = nativeImage.createFromPath(iconPath());
   tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image.resize({ width: 32, height: 32 }));
-  tray.setToolTip('DécoMiniCon — ANGE pour afficher si rangée');
+  updateTrayTip();
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Afficher (ou tape ANGE)', click: () => revealApp() },
+    { label: `Afficher (ou tape ${openCombo})`, click: () => revealApp() },
     { label: 'Remettre en bas à droite', click: () => snapToCorner() },
     { label: 'Ranger complètement', click: () => hideGame() },
     { type: 'separator' },
     { label: 'Quitter DécoMiniCon', click: () => app.quit() }
   ]));
   tray.on('click', () => revealApp());
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
+  updateTrayTip();
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: `Afficher (ou tape ${openCombo})`, click: () => revealApp() },
+    { label: 'Remettre en bas à droite', click: () => snapToCorner() },
+    { label: 'Ranger complètement', click: () => hideGame() },
+    { type: 'separator' },
+    { label: 'Quitter DécoMiniCon', click: () => app.quit() }
+  ]));
 }
 
 function sendToChat(channel, payload) {

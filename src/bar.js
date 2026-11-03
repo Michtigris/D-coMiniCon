@@ -68,7 +68,7 @@ window.deco.on('chat:visible', (info) => {
 });
 window.deco.on('game:result', (result) => {
   flashing = true;
-  if (result.stashed) sub.textContent = 'Tape ANGE pour revenir';
+  if (result.stashed) sub.textContent = result.reason || `Tape ${result.openCombo || 'ANGE'} pour revenir`;
   else sub.textContent = result.ok ? `« ${result.title} » masqué` : result.reason;
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => {
