@@ -111,7 +111,10 @@ function shell() {
     <div class="shell">
       <header class="top" id="drag">
         <div>
-          <div class="brand">DécoMiniCon</div>
+          <div class="brand-row">
+            <div class="brand">DécoMiniCon</div>
+            <span class="app-version" id="app-version"></span>
+          </div>
           <div class="tag" id="tagline">Petite conversation</div>
         </div>
         <div class="top-actions">
@@ -177,6 +180,8 @@ function renderBody() {
 }
 
 function renderChrome() {
+  const ver = document.getElementById('app-version');
+  if (ver) ver.textContent = state.version ? `v${state.version}` : '';
   const tag = document.getElementById('tagline');
   const view = currentView();
   if (tag) {

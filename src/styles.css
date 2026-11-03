@@ -47,6 +47,11 @@ button:disabled { cursor: default; opacity: 0.45; }
   gap: 8px;
   padding: 10px 12px 4px;
 }
+.brand-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
 .brand {
   font-family: Fredoka, "Segoe UI", sans-serif;
   font-size: 16px;
@@ -54,6 +59,12 @@ button:disabled { cursor: default; opacity: 0.45; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--cyan);
+}
+.app-version {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 .tag {
   color: var(--muted);
