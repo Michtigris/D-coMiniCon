@@ -183,9 +183,16 @@ function bindBuddy(el) {
   if (!el || el.dataset.bound) return;
   el.dataset.bound = '1';
   let speaking = false;
+  const stopTalk = () => {
+    speaking = false;
+    el.classList.remove('talking');
+    el.style.removeProperty('--sx');
+  };
   const talk = () => {
     if (speaking) return;
     speaking = true;
+    // Côté du clap : 50/50 gauche / droite
+    el.style.setProperty('--sx', Math.random() < 0.5 ? '-1' : '1');
     el.classList.add('talking');
     const line = BUDDY_LINES[Math.floor(Math.random() * BUDDY_LINES.length)];
     try {
@@ -194,19 +201,11 @@ function bindBuddy(el) {
       utter.lang = 'fr-FR';
       utter.rate = 1.05;
       utter.pitch = 1.35;
-      const end = () => {
-        speaking = false;
-        el.classList.remove('talking');
-      };
-      utter.onend = end;
-      utter.onerror = end;
+      utter.onend = stopTalk;
+      utter.onerror = stopTalk;
       window.speechSynthesis.speak(utter);
     } catch {
-      // Pas de TTS : anime quand même un court instant.
-      setTimeout(() => {
-        speaking = false;
-        el.classList.remove('talking');
-      }, 1600);
+      setTimeout(stopTalk, 1600);
     }
   };
   el.addEventListener('pointerenter', talk);

@@ -67,10 +67,12 @@ button:disabled { cursor: default; opacity: 0.45; }
   color: var(--muted);
 }
 
-/* Mascotte : haut de tête qui se soulève (Canadiens South Park), pas une rotation latérale */
+/* Mascotte Canadiens South Park : monte + décale + rotate du côté (50/50) */
 .buddy {
-  width: 72px;
-  height: 72px;
+  --buddy: 72px;
+  --sx: 1; /* 1 = droite, -1 = gauche */
+  width: var(--buddy);
+  height: var(--buddy);
   padding: 0;
   border: 0;
   background: transparent;
@@ -84,40 +86,54 @@ button:disabled { cursor: default; opacity: 0.45; }
 .buddy-stage {
   position: relative;
   display: block;
-  width: 72px;
-  height: 72px;
-  perspective: 280px;
-  transform-style: preserve-3d;
+  width: var(--buddy);
+  height: var(--buddy);
+  overflow: visible;
 }
 .buddy-top,
 .buddy-bottom {
   position: absolute;
   left: 0;
-  width: 72px;
-  height: 72px;
+  width: var(--buddy);
+  height: var(--buddy);
   background: url("../assets/icon.png") center / contain no-repeat;
   pointer-events: none;
 }
 .buddy-top {
   top: 0;
-  /* coupe au niveau de la bouche / charnière */
-  clip-path: inset(0 0 36% 0);
-  transform-origin: 50% 64%;
-  transform: rotateX(0deg);
+  /* coupe juste au-dessus de la bande bouche */
+  clip-path: inset(0 0 34% 0);
+  transform-origin: 50% 66%;
+  transform: translate(0, 0) rotate(0deg);
+  transition: transform 0.14s ease-out;
   z-index: 2;
-  backface-visibility: hidden;
 }
 .buddy-bottom {
   top: 0;
-  clip-path: inset(64% 0 0 0);
+  clip-path: inset(66% 0 0 0);
   z-index: 1;
 }
+/* Pendant la parole : oscille entre « ouvert » et « presque fermé » (petit écart gardé) */
 .buddy.talking .buddy-top {
-  animation: canadian-lid 0.16s ease-in-out infinite alternate;
+  animation: canadian-talk 0.2s ease-in-out infinite alternate;
 }
-@keyframes canadian-lid {
-  from { transform: rotateX(0deg) translateY(0); }
-  to { transform: rotateX(-48deg) translateY(-2px); }
+@keyframes canadian-talk {
+  from {
+    transform:
+      translateY(-3px)
+      translateX(calc(var(--sx) * 1px))
+      rotate(calc(var(--sx) * -3deg));
+  }
+  to {
+    transform:
+      translateY(-13px)
+      translateX(calc(var(--sx) * 7px))
+      rotate(calc(var(--sx) * -14deg));
+  }
+}
+/* Bouche vraiment fermée seulement quand il ne parle plus */
+.buddy:not(.talking) .buddy-top {
+  transform: translate(0, 0) rotate(0deg);
 }
 .tag {
   color: var(--muted);
