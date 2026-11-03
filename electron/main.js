@@ -720,10 +720,16 @@ function createWindows() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: false,
-    focusable: true
+    // Pas de focus Windows (= pas de bordure accent orange au clic / Shift).
+    focusable: false
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  try {
+    bar.setFocusable(false);
+  } catch {
+    // ignore
+  }
   const index = path.join(__dirname, '..', 'src', 'index.html');
   chat.loadFile(index, { query: { view: 'chat' } });
   bar.loadFile(index, { query: { view: 'bar' } });

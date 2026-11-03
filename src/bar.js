@@ -246,8 +246,14 @@ logo.addEventListener('pointerleave', () => {
 });
 
 logo.addEventListener('pointerdown', (event) => {
+  // Évite le focus / bordure Windows (ex. avec Shift).
+  event.preventDefault();
+  try {
+    logo.blur();
+  } catch {
+    // ignore
+  }
   if (event.button === 2) {
-    event.preventDefault();
     cancelSingleClick();
     window.deco.toggleChat();
     return;
