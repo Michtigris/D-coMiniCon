@@ -137,8 +137,83 @@ function defaultProfile() {
     chatVisible: true,
     settingsOpen: false,
     openCombo: 'ANGE',
+    lastPartnerId: null,
+    lastView: 'salon',
     seen: {}
   };
+}
+
+function memoryBridgePath() {
+  return path.join(app.getPath('documents'), 'DécoMiniCon-memoire.txt');
+}
+
+function encodeMemory(obj) {
+  const buf = Buffer.from(JSON.stringify(obj), 'utf8');
+  const key = Buffer.from('DécoMiniCon-bridge-v1');
+  for (let i = 0; i < buf.length; i += 1) buf[i] ^= key[i % key.length];
+  return `DMC1.${buf.toString('base64')}`;
+}
+
+function decodeMemory(text) {
+  const raw = String(text || '').trim();
+  if (!raw.startsWith('DMC1.')) return null;
+  const buf = Buffer.from(raw.slice(5), 'base64');
+  const key = Buffer.from('DécoMiniCon-bridge-v1');
+  for (let i = 0; i < buf.length; i += 1) buf[i] ^= key[i % key.length];
+  return JSON.parse(buf.toString('utf8'));
+}
+
+function exportMemoryBridge() {
+  try {
+    const live = profile ? { ...profile } : {};
+    try {
+      const pos = stackPos();
+      live.x = pos.x;
+      live.y = pos.y;
+      live.chatVisible = chatVisible;
+    } catch {
+      // fenêtres pas encore prêtes
+    }
+    const payload = {
+      v: 1,
+      exportedAt: Date.now(),
+      profile: { ...defaultProfile(), ...readJson(profileFile(), {}), ...live },
+      history: readJson(historyFile(), {})
+    };
+    fs.writeFileSync(memoryBridgePath(), encodeMemory(payload), 'utf8');
+    log('Mémoire exportée vers Documents');
+    return true;
+  } catch (err) {
+    log(`memory export ${err.message}`);
+    return false;
+  }
+}
+
+function importMemoryBridgeIfNeeded() {
+  const bridge = memoryBridgePath();
+  if (!fs.existsSync(bridge)) return false;
+  try {
+    const data = decodeMemory(fs.readFileSync(bridge, 'utf8'));
+    const existing = readJson(profileFile(), {});
+    const empty = !existing.pseudo || !existing.userId || !existing.token;
+    if (empty && data?.profile) {
+      writeJson(profileFile(), { ...defaultProfile(), ...data.profile });
+      if (data.history && typeof data.history === 'object') writeJson(historyFile(), data.history);
+      log('Mémoire Documents restaurée');
+    } else {
+      log('Mémoire Documents ignorée (profil AppData déjà présent)');
+    }
+    fs.rmSync(bridge, { force: true });
+    return empty;
+  } catch (err) {
+    log(`memory import ${err.message}`);
+    try {
+      fs.rmSync(bridge, { force: true });
+    } catch {
+      // ignore
+    }
+    return false;
+  }
 }
 
 function readJson(file, fallback) {
@@ -176,6 +251,8 @@ function restoreProfile() {
 }
 
 function loadProfile() {
+  // AppData survit en général à la màj ; le .txt Documents est le filet de secours.
+  importMemoryBridgeIfNeeded();
   restoreProfile();
   profile = { ...defaultProfile(), ...readJson(profileFile(), {}) };
   profile.openCombo = normalizeOpenCombo(profile.openCombo);
@@ -754,8 +831,15 @@ function setBarExpanded(on) {
 function applyManualUpdate() {
   if (!updaterRef || !updateReady || quitting) return false;
   try {
+    try {
+      const pos = stackPos();
+      saveProfile({ x: pos.x, y: pos.y, chatVisible });
+    } catch {
+      // ignore
+    }
     backupProfile();
-    log('Installation màj manuelle');
+    exportMemoryBridge();
+    log('Installation màj manuelle (mémoire sauvegardée)');
     updaterRef.quitAndInstall(true, true);
     return true;
   } catch (err) {

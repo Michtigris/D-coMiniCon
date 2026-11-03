@@ -1060,7 +1060,12 @@ async function applyAuth(payload) {
     state.messages = [];
     state.partnerCam = false;
     hardStopMedia();
-    renderBody();
+    const remember = state.profile?.lastPartnerId;
+    if (remember && (state.friends || []).some((f) => f.id === remember)) {
+      net?.send({ type: 'link', payload: { friendId: remember } });
+    } else {
+      renderBody();
+    }
   }
   live = true;
   renderChrome();
@@ -1080,6 +1085,7 @@ async function applyLink(payload, { quiet = false } = {}) {
   if (!payload.partner) {
     state.messages = [];
     state.browsing = false;
+    state.profile = await window.deco.saveProfile({ lastPartnerId: null, lastView: 'salon' });
   } else {
     const pair = pairKey(state.me.id, payload.partner.id);
     const local = await window.deco.readHistory(pair);
@@ -1093,6 +1099,10 @@ async function applyLink(payload, { quiet = false } = {}) {
       });
     }
     state.browsing = false;
+    state.profile = await window.deco.saveProfile({
+      lastPartnerId: payload.partner.id,
+      lastView: 'chat'
+    });
   }
   renderBody();
   syncMessages();
