@@ -620,14 +620,14 @@ function createWindows() {
     ...common,
     height: CHAT_H,
     transparent: false,
-    backgroundColor: '#0a0a0f',
+    backgroundColor: '#eef3f8',
     roundedCorners: false
   });
   bar = new BrowserWindow({
     ...common,
     height: BAR_H,
     transparent: false,
-    backgroundColor: '#12121a',
+    backgroundColor: '#ffffff',
     roundedCorners: false,
     focusable: true
   });
