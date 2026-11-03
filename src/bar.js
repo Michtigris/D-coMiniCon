@@ -12,27 +12,48 @@ app.innerHTML = `
 
 const logo = document.getElementById('logo');
 const badge = document.getElementById('badge');
+const FLIP_MS = 340;
 let nextSide = 'right';
-let animTimer = 0;
+let flipTimer = 0;
+let closeTimer = 0;
+let hovering = false;
 
 function stopAnim() {
-  clearTimeout(animTimer);
+  clearInterval(flipTimer);
+  flipTimer = 0;
+  clearTimeout(closeTimer);
+  closeTimer = 0;
   logo.classList.remove('talking', 'talk-left', 'talk-right');
 }
 
-function startAnim() {
-  stopAnim();
+function flipSide() {
+  logo.classList.remove('talk-left', 'talk-right');
+  // Force un redémarrage propre de l’anim à chaque côté
+  void logo.offsetWidth;
   logo.classList.add('talking', nextSide === 'right' ? 'talk-right' : 'talk-left');
   nextSide = nextSide === 'right' ? 'left' : 'right';
 }
 
-logo.addEventListener('pointerenter', () => {
-  startAnim();
-});
+function startHoverTalk() {
+  hovering = true;
+  clearTimeout(closeTimer);
+  closeTimer = 0;
+  if (!flipTimer) {
+    flipSide();
+    flipTimer = setInterval(() => {
+      if (hovering) flipSide();
+    }, FLIP_MS);
+  }
+}
+
+logo.addEventListener('pointerenter', startHoverTalk);
 
 logo.addEventListener('pointerleave', () => {
-  // Laisse finir un cycle puis ferme la bouche
-  animTimer = setTimeout(stopAnim, 180);
+  hovering = false;
+  clearInterval(flipTimer);
+  flipTimer = 0;
+  // Ferme la bouche seulement après un court temps hors hover
+  closeTimer = setTimeout(stopAnim, 160);
 });
 
 logo.addEventListener('pointerdown', (event) => {
@@ -48,6 +69,7 @@ logo.addEventListener('pointerdown', (event) => {
 logo.addEventListener('dblclick', (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
+  hovering = false;
   stopAnim();
   window.deco.hideGame();
 });
@@ -65,8 +87,4 @@ window.deco.on('badge', (info) => {
   badge.textContent = call ? '!' : (unread > 9 ? '9+' : String(unread));
   logo.classList.toggle('ringing', call);
   logo.classList.toggle('off', info && info.connected === false);
-});
-
-window.deco.on('game:result', () => {
-  // rien à afficher : le logo est masqué avec l’app
 });

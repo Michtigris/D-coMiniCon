@@ -183,17 +183,26 @@ function bindBuddy(el) {
   if (!el || el.dataset.bound) return;
   el.dataset.bound = '1';
   let speaking = false;
-  let nextSide = 'right'; // alterne à chaque prise de parole
+  let nextSide = 'right';
+  let flipTimer = 0;
+  const FLIP_MS = 340;
+  const flipSide = () => {
+    el.classList.remove('talk-left', 'talk-right');
+    void el.offsetWidth;
+    el.classList.add('talking', nextSide === 'right' ? 'talk-right' : 'talk-left');
+    nextSide = nextSide === 'right' ? 'left' : 'right';
+  };
   const stopTalk = () => {
     speaking = false;
+    clearInterval(flipTimer);
+    flipTimer = 0;
     el.classList.remove('talking', 'talk-left', 'talk-right');
   };
   const talk = () => {
     if (speaking) return;
     speaking = true;
-    el.classList.remove('talk-left', 'talk-right');
-    el.classList.add('talking', nextSide === 'right' ? 'talk-right' : 'talk-left');
-    nextSide = nextSide === 'right' ? 'left' : 'right';
+    flipSide();
+    flipTimer = setInterval(flipSide, FLIP_MS);
     const line = BUDDY_LINES[Math.floor(Math.random() * BUDDY_LINES.length)];
     try {
       window.speechSynthesis.cancel();
