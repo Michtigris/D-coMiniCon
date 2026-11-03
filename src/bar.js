@@ -2,7 +2,7 @@ const app = document.getElementById('app');
 
 app.innerHTML = `
   <div class="bar-root" id="root">
-    <button type="button" class="buddy bar-logo" id="logo" title="Glisser · clic = màj · clic droit = conversation · double-clic = Masquer" aria-label="DécoMiniCon">
+    <button type="button" class="buddy bar-logo" id="logo" title="DécoMiniCon" aria-label="DécoMiniCon">
       <span class="buddy-stage">
         <span class="buddy-top"></span>
         <span class="buddy-bottom"></span>
