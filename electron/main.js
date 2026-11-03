@@ -31,7 +31,7 @@ let chat = null;
 let bar = null;
 let tray = null;
 let profile = null;
-let chatVisible = true;
+let chatVisible = false;
 let openUp = true;
 let openLeft = false; // menu ancré à droite du logo → s’ouvre vers la gauche
 let chatSunk = false;
@@ -137,7 +137,7 @@ function defaultProfile() {
     hosting: false,
     x: null,
     y: null,
-    chatVisible: true,
+    chatVisible: false,
     settingsOpen: false,
     openCombo: 'ANGE',
     uiSize: 'normal',
@@ -307,7 +307,8 @@ function loadProfile() {
   profile = { ...defaultProfile(), ...readJson(profileFile(), {}) };
   profile.openCombo = normalizeOpenCombo(profile.openCombo);
   profile.uiSize = normalizeUiSize(profile.uiSize);
-  chatVisible = profile.chatVisible !== false;
+  // Strict : seulement true si explicitement sauvé ouvert (évite faux « menu ouvert »).
+  chatVisible = profile.chatVisible === true;
   applyOpenCombo(profile.openCombo);
   return profile;
 }
@@ -384,7 +385,30 @@ function decideOpenDir(barX, barY) {
   return { openUp: nextUp, openLeft: nextLeft };
 }
 
+/** Menu réellement à l’écran (pas seulement le flag mémoire). */
+function chatIsOnScreen() {
+  return !!(
+    !stashed
+    && chat
+    && !chat.isDestroyed()
+    && chat.isVisible()
+  );
+}
+
+/** Aligne le flag chatVisible sur la fenêtre réelle. */
+function syncMenuState() {
+  if (stashed || !chat || chat.isDestroyed()) return;
+  const shown = chat.isVisible();
+  if (chatVisible && !shown) {
+    chatVisible = false;
+    chatSunk = false;
+  } else if (!chatVisible && shown) {
+    chatVisible = true;
+  }
+}
+
 function clampBar(barX, barY) {
+  syncMenuState();
   const bw = barW();
   const bh = barH();
   const cw = chatW();
@@ -397,7 +421,8 @@ function clampBar(barX, barY) {
   let x = Math.round(barX);
   let y = Math.round(barY);
 
-  if (chatVisible) {
+  // Réserver l’espace menu seulement s’il est vraiment affiché.
+  if (chatIsOnScreen()) {
     let chatO = chatOriginFor(x, y);
     if (chatO.x < area.x) x += area.x - chatO.x;
     if (chatO.y < area.y) y += area.y - chatO.y;
@@ -448,6 +473,7 @@ function windowsReady() {
 
 function layout(barX, barY) {
   if (!windowsReady()) return;
+  syncMenuState();
   const pos = clampBar(barX, barY);
   bar.setBounds({ x: pos.x, y: pos.y, width: barW(), height: barH() });
   if (chatVisible) {
@@ -455,7 +481,7 @@ function layout(barX, barY) {
     chat.setBounds({ x: chatO.x, y: chatO.y, width: chatW(), height: chatH() });
     if (!chat.isVisible()) chat.showInactive();
   } else {
-    chat.hide();
+    if (chat.isVisible()) chat.hide();
   }
   if (!bar.isVisible()) bar.showInactive();
   if (!dragging) bar.setAlwaysOnTop(true, 'screen-saver');
@@ -521,6 +547,7 @@ function finishDrag() {
 
 function beginDrag() {
   finishDrag();
+  syncMenuState();
   dragging = true;
   const start = screen.getCursorScreenPoint();
   const origin = stackPos();
@@ -754,10 +781,7 @@ function menuIsLinked() {
 
 function tellBar(extra = {}) {
   if (!bar || bar.isDestroyed()) return;
-  if (chatVisible && !menuIsOpen() && !stashed) {
-    chatVisible = false;
-    chatSunk = false;
-  }
+  syncMenuState();
   const open = menuIsOpen();
   const linked = menuIsLinked();
   bar.webContents.send('badge', lastBadge);
