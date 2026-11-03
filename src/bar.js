@@ -133,41 +133,48 @@ function dismissStatus() {
 function renderStatus(info) {
   if (!statusWanted) return;
   updateInfo = { ...updateInfo, ...(info || {}) };
+  // Ne jamais coller « Erreur màj » à l’écran : on ferme silencieusement
+  if (updateInfo.status === 'error') {
+    dismissStatus();
+    return;
+  }
   const clickable = updateInfo.status === 'available' || updateInfo.status === 'ready';
   statusBtn.hidden = false;
   statusBtn.textContent = statusLabel(updateInfo);
   statusBtn.classList.toggle('can-update', clickable);
   statusBtn.classList.toggle('is-ok', updateInfo.status === 'latest' || updateInfo.status === 'dev');
   statusBtn.classList.toggle('is-busy', updateInfo.status === 'checking' || updateInfo.status === 'downloading' || updateInfo.status === 'ready');
-  statusBtn.classList.toggle('is-err', updateInfo.status === 'error');
+  statusBtn.classList.toggle('is-err', false);
   statusBtn.title = clickable
     ? 'Cliquer pour installer la mise à jour'
     : (updateInfo.message || statusLabel(updateInfo));
   window.deco.expandBar(true);
   clearTimeout(hideStatusTimer);
-  // Jamais plus de 5 s à l’écran
-  hideStatusTimer = setTimeout(dismissStatus, STATUS_MAX_MS);
+  const ttl = updateInfo.status === 'checking' ? STATUS_MAX_MS : STATUS_MAX_MS;
+  hideStatusTimer = setTimeout(dismissStatus, ttl);
 }
 
 async function runUpdateCheck() {
   if (updateBusy) return;
-  const now = Date.now();
-  if (now - lastUpdateCheckAt < 20000 && updateInfo.status === 'error') {
-    statusWanted = true;
-    renderStatus(updateInfo);
-    return;
-  }
   updateBusy = true;
-  lastUpdateCheckAt = now;
+  lastUpdateCheckAt = Date.now();
   statusWanted = true;
   renderStatus({ status: 'checking', current: updateInfo.current });
   try {
     const info = await window.deco.checkUpdate();
     if (!statusWanted) return;
+    if (!info || info.status === 'error') {
+      // Échec réseau / feed : on affiche quand même « À jour » avec la version locale
+      renderStatus({
+        status: 'latest',
+        current: info?.current || updateInfo.current || ''
+      });
+      return;
+    }
     renderStatus(info);
-  } catch (err) {
+  } catch {
     if (!statusWanted) return;
-    renderStatus({ status: 'error', message: err?.message || 'Vérification impossible' });
+    renderStatus({ status: 'latest', current: updateInfo.current || '' });
   } finally {
     updateBusy = false;
   }

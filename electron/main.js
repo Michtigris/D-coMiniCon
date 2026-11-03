@@ -1018,7 +1018,8 @@ async function checkUpdateManual() {
           setTimeout(() => reject(new Error('Délai dépassé')), 10000);
         })
       ]);
-      if (updateState === 'checking') {
+      // Les events updater peuvent déjà avoir posé latest/available
+      if (updateState === 'checking' || updateState === 'error') {
         const remote = result?.updateInfo?.version;
         if (remote && remote !== app.getVersion()) {
           updateState = 'available';
@@ -1027,12 +1028,18 @@ async function checkUpdateManual() {
           updateState = 'latest';
           updateRemoteVersion = '';
         }
+        updateError = '';
         tellUpdateStatus();
       }
     } catch (err) {
-      updateState = 'error';
-      updateError = err.message || 'Vérification impossible';
-      tellUpdateStatus();
+      log(`updater check ${err.message}`);
+      // Pas d’état « error » collant : on renvoie latest (version locale)
+      if (updateState === 'checking' || updateState === 'error') {
+        updateState = 'latest';
+        updateRemoteVersion = '';
+        updateError = '';
+        tellUpdateStatus();
+      }
     } finally {
       updateCheckPromise = null;
     }
@@ -1116,10 +1123,14 @@ function setupUpdater() {
       applyManualUpdate();
     });
     autoUpdater.on('error', (err) => {
-      updateState = 'error';
-      updateError = err.message || 'Erreur màj';
-      log(`updater ${updateError}`);
-      tellUpdateStatus();
+      log(`updater ${err.message || err}`);
+      // Pendant un check, l’erreur est gérée par checkUpdateManual (→ latest soft).
+      // On ne force « error » que si un téléchargement est en cours.
+      if (updateState === 'downloading') {
+        updateState = 'error';
+        updateError = err.message || 'Erreur màj';
+        tellUpdateStatus();
+      }
     });
   } catch (err) {
     log(`updater ${err.message}`);
