@@ -112,6 +112,12 @@ function shell() {
       <header class="top" id="drag">
         <div>
           <div class="brand-row">
+            <button type="button" class="buddy" id="buddy" title="Passe sur moi !" aria-label="Faire parler la mascotte">
+              <span class="buddy-stage">
+                <span class="buddy-top"></span>
+                <span class="buddy-bottom"></span>
+              </span>
+            </button>
             <div class="brand">DécoMiniCon</div>
             <span class="app-version" id="app-version"></span>
           </div>
@@ -157,9 +163,56 @@ function shell() {
   document.getElementById('min').onclick = () => window.deco.toggleChat();
   document.getElementById('settings').onsubmit = saveSettings;
   document.getElementById('close-settings').onclick = () => closeSettings();
+  bindBuddy(document.getElementById('buddy'));
   window.addEventListener('focus', () => {
     state.unread = 0;
     pushBadge();
+  });
+}
+
+const BUDDY_LINES = [
+  'Salut ! DécoMiniCon, eh !',
+  'Désolé, j’ouvre la tête quand je parle, c’est normal au Canada.',
+  'Tape ton mot-clé secret pour me retrouver !',
+  'Aboot… euh, à bientôt !',
+  'Je suis pas un virus, je suis juste goofy.',
+  'Masque-moi si tu dois cacher le salon, sorry !'
+];
+
+function bindBuddy(el) {
+  if (!el || el.dataset.bound) return;
+  el.dataset.bound = '1';
+  let speaking = false;
+  const talk = () => {
+    if (speaking) return;
+    speaking = true;
+    el.classList.add('talking');
+    const line = BUDDY_LINES[Math.floor(Math.random() * BUDDY_LINES.length)];
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(line);
+      utter.lang = 'fr-FR';
+      utter.rate = 1.05;
+      utter.pitch = 1.35;
+      const end = () => {
+        speaking = false;
+        el.classList.remove('talking');
+      };
+      utter.onend = end;
+      utter.onerror = end;
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // Pas de TTS : anime quand même un court instant.
+      setTimeout(() => {
+        speaking = false;
+        el.classList.remove('talking');
+      }, 1600);
+    }
+  };
+  el.addEventListener('pointerenter', talk);
+  el.addEventListener('click', (event) => {
+    event.preventDefault();
+    talk();
   });
 }
 
@@ -272,7 +325,6 @@ function mountSetup() {
 
   if (!hasAccount) {
     form.innerHTML = `
-      <div class="mark" aria-hidden="true"></div>
       <p class="intro">Crée ton compte (pseudo + mot de passe). Ensuite tu choisiras un serveur.</p>
       <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Par exemple Sam" autocomplete="username" /></label>
       <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="Au moins 4 caractères" autocomplete="new-password" /></label>
@@ -293,7 +345,6 @@ function mountSetup() {
   }
 
   form.innerHTML = `
-    <div class="mark" aria-hidden="true"></div>
     <p class="intro">Compte <strong>${escapeHtml(state.profile.pseudo)}</strong> prêt. Entre l’adresse du serveur pour rejoindre le salon.</p>
     <label>Adresse du serveur <input name="server" required placeholder="ex. 192.168.1.20:3847" /></label>
     <label>Code (optionnel) <input name="code" maxlength="24" placeholder="Si le serveur en demande un" /></label>
