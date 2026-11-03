@@ -149,6 +149,15 @@ function shell() {
           <label>Mot-clé <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" /></label>
           <p class="hint" id="combo-hint">Par défaut ANGE. Silence 0,5 s avant et après. Temps max : 0,5 + 0,4 × lettres.</p>
         </div>
+        <div id="size-settings" hidden>
+          <div class="section">Taille de l’appli</div>
+          <label class="size-slider">
+            Affichage
+            <input name="uiSize" type="range" min="0" max="3" step="1" />
+            <span id="size-label">Normale</span>
+          </label>
+          <p class="hint">Petite · Moyenne · Normale · Grande</p>
+        </div>
         <button type="submit" class="primary">Enregistrer</button>
         <p class="hint" id="version"></p>
         <button type="button" class="ghost" id="close-settings">Fermer</button>
@@ -1148,11 +1157,14 @@ function openSettings() {
   setSettingsFeedback('');
   const serverBlock = document.getElementById('server-settings');
   const comboBlock = document.getElementById('open-combo-settings');
+  const sizeBlock = document.getElementById('size-settings');
   if (serverBlock) serverBlock.hidden = false;
   if (comboBlock) comboBlock.hidden = false;
+  if (sizeBlock) sizeBlock.hidden = false;
   form.server.required = true;
   updateComboHint(form.openCombo.value);
   form.openCombo.oninput = () => updateComboHint(form.openCombo.value);
+  bindSizeSlider(form);
   document.getElementById('version').textContent = `Compte ${state.profile.pseudo || '—'} · multi-PC OK · v${state.version}`;
   const share = document.getElementById('share-settings');
   share.replaceChildren();
@@ -1174,6 +1186,43 @@ function updateComboHint(raw) {
   const n = Math.max(2, Math.min(16, word.length));
   const win = (0.5 + 0.4 * n).toFixed(1).replace('.', ',');
   el.textContent = `Mot « ${word} » → ${win} s max pour le taper, 0,5 s de silence avant et après.`;
+}
+
+const UI_SIZE_ORDER = ['small', 'medium', 'normal', 'large'];
+const UI_SIZE_LABELS = {
+  small: 'Petite (0,5×)',
+  medium: 'Moyenne (0,75×)',
+  normal: 'Normale',
+  large: 'Grande (1,5×)'
+};
+
+function uiSizeFromIndex(index) {
+  return UI_SIZE_ORDER[Math.max(0, Math.min(3, Number(index) || 0))] || 'normal';
+}
+
+function uiSizeIndex(size) {
+  const i = UI_SIZE_ORDER.indexOf(size);
+  return i >= 0 ? i : 2;
+}
+
+function updateSizeLabel(size) {
+  const el = document.getElementById('size-label');
+  if (el) el.textContent = UI_SIZE_LABELS[size] || UI_SIZE_LABELS.normal;
+}
+
+function bindSizeSlider(form) {
+  const slider = form.uiSize;
+  if (!slider) return;
+  const current = state.profile.uiSize || 'normal';
+  slider.value = String(uiSizeIndex(current));
+  updateSizeLabel(current);
+  slider.oninput = () => {
+    const size = uiSizeFromIndex(slider.value);
+    updateSizeLabel(size);
+    window.deco.saveProfile({ uiSize: size }).then((profile) => {
+      state.profile = profile;
+    }).catch(() => {});
+  };
 }
 
 function closeSettings() {
@@ -1215,6 +1264,10 @@ async function saveSettings(event) {
       return;
     }
     patch.openCombo = combo.slice(0, 16);
+  }
+  const sizeBlock = document.getElementById('size-settings');
+  if (sizeBlock && !sizeBlock.hidden && form.uiSize) {
+    patch.uiSize = uiSizeFromIndex(form.uiSize.value);
   }
   const serverBlock = document.getElementById('server-settings');
   if (serverBlock && !serverBlock.hidden && form.server?.value) {

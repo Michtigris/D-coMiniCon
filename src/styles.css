@@ -382,6 +382,23 @@ input:focus {
 }
 .check { flex-direction: row; align-items: center; color: var(--text); text-transform: none; letter-spacing: 0; }
 .check input { width: auto; clip-path: none; }
+.size-slider {
+  display: grid;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.size-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+  cursor: pointer;
+}
+.size-slider #size-label {
+  font-family: Fredoka, sans-serif;
+  font-weight: 600;
+  color: var(--cyan);
+  font-size: 13px;
+}
 
 body[data-view="bar"] {
   background: transparent;

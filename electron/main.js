@@ -12,10 +12,12 @@ if (!gotLock) {
   app.quit();
 }
 
-const W = 328;
-const CHAT_H = 492;
-const BAR_W = 96;
-const BAR_H = 96;
+const BASE_W = 328;
+const BASE_CHAT_H = 492;
+const BASE_BAR = 96;
+const BASE_BAR_EXPANDED = 240;
+const UI_SIZE_SCALES = { small: 0.5, medium: 0.75, normal: 1, large: 1.5 };
+const UI_SIZE_ORDER = ['small', 'medium', 'normal', 'large'];
 const { start, stop } = require('../server/index');
 
 let win32 = null;
@@ -138,10 +140,57 @@ function defaultProfile() {
     chatVisible: true,
     settingsOpen: false,
     openCombo: 'ANGE',
+    uiSize: 'normal',
     lastPartnerId: null,
     lastView: 'salon',
     seen: {}
   };
+}
+
+function normalizeUiSize(raw) {
+  return UI_SIZE_SCALES[raw] ? raw : 'normal';
+}
+
+function uiScale() {
+  return UI_SIZE_SCALES[normalizeUiSize(profile?.uiSize)] || 1;
+}
+
+function chatW() {
+  return Math.round(BASE_W * uiScale());
+}
+
+function chatH() {
+  return Math.round(BASE_CHAT_H * uiScale());
+}
+
+function barW() {
+  return Math.round(BASE_BAR * uiScale());
+}
+
+function barH() {
+  return Math.round(BASE_BAR * uiScale());
+}
+
+function barExpandedW() {
+  return Math.round(BASE_BAR_EXPANDED * uiScale());
+}
+
+function applyUiScale() {
+  const z = uiScale();
+  try {
+    if (chat && !chat.isDestroyed()) chat.webContents.setZoomFactor(z);
+  } catch {
+    // ignore
+  }
+  try {
+    if (bar && !bar.isDestroyed()) bar.webContents.setZoomFactor(z);
+  } catch {
+    // ignore
+  }
+  if (windowsReady()) {
+    const pos = stackPos();
+    layout(pos.x, pos.y);
+  }
 }
 
 function memoryBridgePath() {
@@ -257,12 +306,14 @@ function loadProfile() {
   restoreProfile();
   profile = { ...defaultProfile(), ...readJson(profileFile(), {}) };
   profile.openCombo = normalizeOpenCombo(profile.openCombo);
+  profile.uiSize = normalizeUiSize(profile.uiSize);
   chatVisible = profile.chatVisible !== false;
   applyOpenCombo(profile.openCombo);
   return profile;
 }
 
 function saveProfile(patch) {
+  const prevSize = normalizeUiSize(profile?.uiSize);
   const next = { ...profile, ...(patch && typeof patch === 'object' ? patch : {}) };
   // Ne jamais effacer l’identité du compte (redémarrages / mises à jour).
   if (!next.userId && profile.userId) next.userId = profile.userId;
@@ -273,16 +324,22 @@ function saveProfile(patch) {
   } else if (!next.openCombo) {
     next.openCombo = openCombo || 'ANGE';
   }
+  if (Object.prototype.hasOwnProperty.call(next, 'uiSize') || patch?.uiSize != null) {
+    next.uiSize = normalizeUiSize(next.uiSize);
+  } else {
+    next.uiSize = prevSize;
+  }
   profile = next;
   applyOpenCombo(profile.openCombo);
   writeJson(profileFile(), profile);
   backupProfile();
+  if (normalizeUiSize(profile.uiSize) !== prevSize) applyUiScale();
   return { ...profile };
 }
 
 function barBounds() {
   if (bar && !bar.isDestroyed()) return bar.getBounds();
-  return { x: 0, y: 0, width: BAR_W, height: BAR_H };
+  return { x: 0, y: 0, width: barW(), height: barH() };
 }
 
 /** Position du logo = ancre de tout le layout (le menu ne doit pas le pousser). */
@@ -292,37 +349,49 @@ function stackPos() {
 }
 
 function chatOriginFor(barX, barY) {
+  const bw = barW();
+  const bh = barH();
+  const cw = chatW();
+  const ch = chatH();
   return {
-    x: openLeft ? barX + BAR_W - W : barX,
-    y: openUp ? barY - CHAT_H + 1 : barY + BAR_H - 1
+    x: openLeft ? barX + bw - cw : barX,
+    y: openUp ? barY - ch + 1 : barY + bh - 1
   };
 }
 
 function decideOpenDir(barX, barY) {
-  const point = { x: Math.round(barX + BAR_W / 2), y: Math.round(barY + BAR_H / 2) };
+  const bw = barW();
+  const bh = barH();
+  const cw = chatW();
+  const ch = chatH();
+  const point = { x: Math.round(barX + bw / 2), y: Math.round(barY + bh / 2) };
   const area = screen.getDisplayNearestPoint(point).workArea;
   const spaceRight = area.x + area.width - barX;
-  const spaceLeft = barX + BAR_W - area.x;
-  const spaceBelow = area.y + area.height - (barY + BAR_H);
+  const spaceLeft = barX + bw - area.x;
+  const spaceBelow = area.y + area.height - (barY + bh);
   const spaceAbove = barY - area.y;
 
   let nextLeft;
-  if (spaceRight < W && spaceLeft >= Math.min(W, spaceLeft + spaceRight)) nextLeft = true;
-  else if (spaceLeft < W && spaceRight >= Math.min(W, spaceLeft + spaceRight)) nextLeft = false;
+  if (spaceRight < cw && spaceLeft >= Math.min(cw, spaceLeft + spaceRight)) nextLeft = true;
+  else if (spaceLeft < cw && spaceRight >= Math.min(cw, spaceLeft + spaceRight)) nextLeft = false;
   else nextLeft = point.x >= area.x + area.width / 2;
 
   let nextUp;
-  if (spaceBelow < CHAT_H && spaceAbove >= Math.min(CHAT_H, spaceAbove + spaceBelow)) nextUp = true;
-  else if (spaceAbove < CHAT_H && spaceBelow >= Math.min(CHAT_H, spaceAbove + spaceBelow)) nextUp = false;
+  if (spaceBelow < ch && spaceAbove >= Math.min(ch, spaceAbove + spaceBelow)) nextUp = true;
+  else if (spaceAbove < ch && spaceBelow >= Math.min(ch, spaceAbove + spaceBelow)) nextUp = false;
   else nextUp = point.y >= area.y + area.height / 2;
 
   return { openUp: nextUp, openLeft: nextLeft };
 }
 
 function clampBar(barX, barY) {
+  const bw = barW();
+  const bh = barH();
+  const cw = chatW();
+  const ch = chatH();
   const display = screen.getDisplayNearestPoint({
-    x: Math.round(barX + BAR_W / 2),
-    y: Math.round(barY + BAR_H / 2)
+    x: Math.round(barX + bw / 2),
+    y: Math.round(barY + bh / 2)
   });
   const area = display.workArea;
   let x = Math.round(barX);
@@ -333,12 +402,12 @@ function clampBar(barX, barY) {
     if (chatO.x < area.x) x += area.x - chatO.x;
     if (chatO.y < area.y) y += area.y - chatO.y;
     chatO = chatOriginFor(x, y);
-    if (chatO.x + W > area.x + area.width) x -= chatO.x + W - (area.x + area.width);
-    if (chatO.y + CHAT_H > area.y + area.height) y -= chatO.y + CHAT_H - (area.y + area.height);
+    if (chatO.x + cw > area.x + area.width) x -= chatO.x + cw - (area.x + area.width);
+    if (chatO.y + ch > area.y + area.height) y -= chatO.y + ch - (area.y + area.height);
   }
 
-  x = Math.round(Math.min(Math.max(x, area.x), area.x + area.width - Math.min(BAR_W, area.width)));
-  y = Math.round(Math.min(Math.max(y, area.y), area.y + area.height - Math.min(BAR_H, area.height)));
+  x = Math.round(Math.min(Math.max(x, area.x), area.x + area.width - Math.min(bw, area.width)));
+  y = Math.round(Math.min(Math.max(y, area.y), area.y + area.height - Math.min(bh, area.height)));
   return { x, y };
 }
 
@@ -350,8 +419,8 @@ function cornerPosition() {
   }
   const area = display.workArea;
   return {
-    x: area.x + area.width - BAR_W - 16,
-    y: area.y + area.height - BAR_H - 16
+    x: area.x + area.width - barW() - 16,
+    y: area.y + area.height - barH() - 16
   };
 }
 
@@ -380,10 +449,10 @@ function windowsReady() {
 function layout(barX, barY) {
   if (!windowsReady()) return;
   const pos = clampBar(barX, barY);
-  bar.setBounds({ x: pos.x, y: pos.y, width: BAR_W, height: BAR_H });
+  bar.setBounds({ x: pos.x, y: pos.y, width: barW(), height: barH() });
   if (chatVisible) {
     const chatO = chatOriginFor(pos.x, pos.y);
-    chat.setBounds({ x: chatO.x, y: chatO.y, width: W, height: CHAT_H });
+    chat.setBounds({ x: chatO.x, y: chatO.y, width: chatW(), height: chatH() });
     if (!chat.isVisible()) chat.showInactive();
   } else {
     chat.hide();
@@ -707,7 +776,7 @@ function iconPath() {
 
 function createWindows() {
   const common = {
-    width: W,
+    width: chatW(),
     frame: false,
     thickFrame: false,
     hasShadow: false,
@@ -724,21 +793,22 @@ function createWindows() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
-      autoplayPolicy: 'no-user-gesture-required'
+      autoplayPolicy: 'no-user-gesture-required',
+      zoomFactor: uiScale()
     }
   };
   // Chat opaque : les fenêtres transparentes Electron passent les clics (intouchables).
   chat = new BrowserWindow({
     ...common,
-    height: CHAT_H,
+    height: chatH(),
     transparent: false,
     backgroundColor: '#eef3f8',
     roundedCorners: false
   });
   bar = new BrowserWindow({
     ...common,
-    width: BAR_W,
-    height: BAR_H,
+    width: barW(),
+    height: barH(),
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: false,
@@ -761,6 +831,7 @@ function createWindows() {
   const hidden = bootHidden();
 
   chat.once('ready-to-show', () => {
+    applyUiScale();
     if (hidden) return;
     if (chatVisible) {
       chat.show();
@@ -769,13 +840,18 @@ function createWindows() {
     }
   });
   bar.once('ready-to-show', () => {
+    applyUiScale();
     if (hidden) {
       stashApp();
       return;
     }
     bar.showInactive();
   });
-  bar.webContents.on('did-finish-load', () => tellBar());
+  bar.webContents.on('did-finish-load', () => {
+    applyUiScale();
+    tellBar();
+  });
+  chat.webContents.on('did-finish-load', () => applyUiScale());
 
   // Pas de sink au blur : défocus (clic ailleurs) ne doit pas fermer / enfoncer le panneau.
   chat.on('close', (event) => {
@@ -855,8 +931,8 @@ function tellUpdateStatus() {
 function setBarExpanded(on) {
   if (!bar || bar.isDestroyed()) return;
   const b = bar.getBounds();
-  const width = on ? 240 : BAR_W;
-  bar.setBounds({ x: b.x, y: b.y, width, height: BAR_H });
+  const width = on ? barExpandedW() : barW();
+  bar.setBounds({ x: b.x, y: b.y, width, height: barH() });
 }
 
 function applyManualUpdate() {
