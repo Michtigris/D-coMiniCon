@@ -31,6 +31,7 @@ let tray = null;
 let profile = null;
 let chatVisible = true;
 let openUp = true;
+let openLeft = false; // menu ancré à droite du logo → s’ouvre vers la gauche
 let chatSunk = false;
 let dragging = false;
 let dragTimer = null;
@@ -279,44 +280,66 @@ function saveProfile(patch) {
   return { ...profile };
 }
 
-function stackHeight() {
-  return (chatVisible ? CHAT_H - 1 : 0) + BAR_H;
-}
-
-function stackWidth() {
-  return chatVisible ? W : BAR_W;
-}
-
 function barBounds() {
   if (bar && !bar.isDestroyed()) return bar.getBounds();
   return { x: 0, y: 0, width: BAR_W, height: BAR_H };
 }
 
+/** Position du logo = ancre de tout le layout (le menu ne doit pas le pousser). */
 function stackPos() {
-  if (!chatVisible || !chat || chat.isDestroyed()) {
-    const bounds = barBounds();
-    return { x: bounds.x, y: bounds.y };
-  }
-  const chatB = chat.getBounds();
-  const barB = barBounds();
-  return { x: chatB.x, y: Math.min(chatB.y, barB.y) };
+  const bounds = barBounds();
+  return { x: bounds.x, y: bounds.y };
 }
 
-function decideOpenUp(barY) {
-  const point = { x: barBounds().x + Math.floor(BAR_W / 2), y: Math.round(barY + BAR_H / 2) };
-  const area = screen.getDisplayNearestPoint(point).workArea;
-  return point.y >= area.y + area.height / 2;
-}
-
-function clamp(x, y) {
-  const height = stackHeight();
-  const width = stackWidth();
-  const display = screen.getDisplayNearestPoint({ x: Math.round(x + width / 2), y: Math.round(y + height / 2) });
-  const area = display.workArea;
+function chatOriginFor(barX, barY) {
   return {
-    x: Math.round(Math.min(Math.max(x, area.x), area.x + area.width - Math.min(width, area.width))),
-    y: Math.round(Math.min(Math.max(y, area.y), area.y + area.height - Math.min(height, area.height)))
+    x: openLeft ? barX + BAR_W - W : barX,
+    y: openUp ? barY - CHAT_H + 1 : barY + BAR_H - 1
   };
+}
+
+function decideOpenDir(barX, barY) {
+  const point = { x: Math.round(barX + BAR_W / 2), y: Math.round(barY + BAR_H / 2) };
+  const area = screen.getDisplayNearestPoint(point).workArea;
+  const spaceRight = area.x + area.width - barX;
+  const spaceLeft = barX + BAR_W - area.x;
+  const spaceBelow = area.y + area.height - (barY + BAR_H);
+  const spaceAbove = barY - area.y;
+
+  let nextLeft;
+  if (spaceRight < W && spaceLeft >= Math.min(W, spaceLeft + spaceRight)) nextLeft = true;
+  else if (spaceLeft < W && spaceRight >= Math.min(W, spaceLeft + spaceRight)) nextLeft = false;
+  else nextLeft = point.x >= area.x + area.width / 2;
+
+  let nextUp;
+  if (spaceBelow < CHAT_H && spaceAbove >= Math.min(CHAT_H, spaceAbove + spaceBelow)) nextUp = true;
+  else if (spaceAbove < CHAT_H && spaceBelow >= Math.min(CHAT_H, spaceAbove + spaceBelow)) nextUp = false;
+  else nextUp = point.y >= area.y + area.height / 2;
+
+  return { openUp: nextUp, openLeft: nextLeft };
+}
+
+function clampBar(barX, barY) {
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(barX + BAR_W / 2),
+    y: Math.round(barY + BAR_H / 2)
+  });
+  const area = display.workArea;
+  let x = Math.round(barX);
+  let y = Math.round(barY);
+
+  if (chatVisible) {
+    let chatO = chatOriginFor(x, y);
+    if (chatO.x < area.x) x += area.x - chatO.x;
+    if (chatO.y < area.y) y += area.y - chatO.y;
+    chatO = chatOriginFor(x, y);
+    if (chatO.x + W > area.x + area.width) x -= chatO.x + W - (area.x + area.width);
+    if (chatO.y + CHAT_H > area.y + area.height) y -= chatO.y + CHAT_H - (area.y + area.height);
+  }
+
+  x = Math.round(Math.min(Math.max(x, area.x), area.x + area.width - Math.min(BAR_W, area.width)));
+  y = Math.round(Math.min(Math.max(y, area.y), area.y + area.height - Math.min(BAR_H, area.height)));
+  return { x, y };
 }
 
 function cornerPosition() {
@@ -326,10 +349,9 @@ function cornerPosition() {
     display = screen.getDisplayNearestPoint({ x: bounds.x + 8, y: bounds.y + 8 });
   }
   const area = display.workArea;
-  const width = stackWidth();
   return {
-    x: area.x + area.width - width - 16,
-    y: area.y + area.height - stackHeight() - 16
+    x: area.x + area.width - BAR_W - 16,
+    y: area.y + area.height - BAR_H - 16
   };
 }
 
@@ -355,25 +377,30 @@ function windowsReady() {
   return !!(chat && !chat.isDestroyed() && bar && !bar.isDestroyed());
 }
 
-function layout(x, y) {
+function layout(barX, barY) {
   if (!windowsReady()) return;
-  const pos = clamp(x, y);
+  const pos = clampBar(barX, barY);
+  bar.setBounds({ x: pos.x, y: pos.y, width: BAR_W, height: BAR_H });
   if (chatVisible) {
-    if (openUp) {
-      chat.setBounds({ x: pos.x, y: pos.y, width: W, height: CHAT_H });
-      bar.setBounds({ x: pos.x, y: pos.y + CHAT_H - 1, width: BAR_W, height: BAR_H });
-    } else {
-      bar.setBounds({ x: pos.x, y: pos.y, width: BAR_W, height: BAR_H });
-      chat.setBounds({ x: pos.x, y: pos.y + BAR_H - 1, width: W, height: CHAT_H });
-    }
+    const chatO = chatOriginFor(pos.x, pos.y);
+    chat.setBounds({ x: chatO.x, y: chatO.y, width: W, height: CHAT_H });
     if (!chat.isVisible()) chat.showInactive();
   } else {
     chat.hide();
-    bar.setBounds({ x: pos.x, y: pos.y, width: BAR_W, height: BAR_H });
   }
   if (!bar.isVisible()) bar.showInactive();
   if (!dragging) bar.setAlwaysOnTop(true, 'screen-saver');
   tellBar();
+}
+
+function openChatAroundLogo() {
+  const anchor = barBounds();
+  const dir = decideOpenDir(anchor.x, anchor.y);
+  openUp = dir.openUp;
+  openLeft = dir.openLeft;
+  chatVisible = true;
+  layout(anchor.x, anchor.y);
+  raiseChat();
 }
 
 function toggleChatWindow() {
@@ -381,20 +408,15 @@ function toggleChatWindow() {
   // Menu non lié (fermé ou enfoncé) → un clic ouvre / remonte.
   if (chatVisible && !menuIsLinked()) {
     if (!chat || chat.isDestroyed() || !chat.isVisible()) {
-      openUp = decideOpenUp(anchor.y);
-      if (openUp) layout(anchor.x, anchor.y - CHAT_H + 1);
-      else layout(anchor.x, anchor.y);
+      openChatAroundLogo();
+    } else {
+      raiseChat();
     }
-    raiseChat();
     savePosition();
     return true;
   }
   if (!chatVisible) {
-    openUp = decideOpenUp(anchor.y);
-    chatVisible = true;
-    if (openUp) layout(anchor.x, anchor.y - CHAT_H + 1);
-    else layout(anchor.x, anchor.y);
-    raiseChat();
+    openChatAroundLogo();
   } else {
     chatVisible = false;
     chatSunk = false;
@@ -466,7 +488,7 @@ function stopAngeWatch() {
 
 function savedPosition() {
   if (Number.isFinite(profile?.x) && Number.isFinite(profile?.y)) {
-    return clamp(profile.x, profile.y);
+    return clampBar(profile.x, profile.y);
   }
   return cornerPosition();
 }
@@ -616,11 +638,10 @@ function revealApp() {
 
 function snapToCorner() {
   stashed = false;
-  chatVisible = true;
   const pos = cornerPosition();
-  layout(pos.x, pos.y);
   if (bar && !bar.isDestroyed()) bar.show();
-  raiseChat();
+  layout(pos.x, pos.y);
+  openChatAroundLogo();
   if (chat && !chat.isDestroyed()) {
     chat.show();
     chat.focus();
@@ -675,7 +696,8 @@ function tellBar(extra = {}) {
     ...extra,
     visible: open,
     linked,
-    openUp
+    openUp,
+    openLeft
   });
 }
 
