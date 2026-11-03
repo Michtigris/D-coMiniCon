@@ -395,14 +395,18 @@ function bootHidden() {
 
 function enableAutoStart() {
   try {
+    // Toujours pointer explicitement vers l’exe courant (évite ANGE → une vieille install).
     if (app.isPackaged) {
-      app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true, args: ['--hidden'] });
-    } else {
       app.setLoginItemSettings({
         openAtLogin: true,
+        openAsHidden: true,
         path: process.execPath,
-        args: [path.join(__dirname, '..'), '--hidden']
+        args: ['--hidden']
       });
+      log(`autostart ${process.execPath}`);
+    } else {
+      app.setLoginItemSettings({ openAtLogin: false });
+      log('autostart off (dev npm start)');
     }
   } catch (err) {
     log(`autostart ${err.message}`);
