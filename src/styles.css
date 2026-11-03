@@ -320,6 +320,10 @@ input:focus {
   gap: 8px;
   box-shadow: var(--glow-cyan);
 }
+/* display:flex ci-dessus écrasait l’attribut HTML hidden → Fermer semblait mort. */
+.settings[hidden] {
+  display: none !important;
+}
 .check { flex-direction: row; align-items: center; color: var(--text); text-transform: none; letter-spacing: 0; }
 .check input { width: auto; clip-path: none; }
 

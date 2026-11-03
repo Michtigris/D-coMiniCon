@@ -127,8 +127,8 @@ function shell() {
       <form id="settings" class="settings" hidden>
         <div class="section">Compte</div>
         <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
-        <label>Mot de passe <input name="password" type="password" maxlength="64" placeholder="Nouveau mdp (optionnel)" autocomplete="new-password" /></label>
-        <label>Confirmer <input name="password2" type="password" maxlength="64" placeholder="Si tu changes le mdp" autocomplete="new-password" /></label>
+        <label>Mot de passe <input name="password" type="password" maxlength="64" placeholder="Laisser vide pour ne pas changer" autocomplete="new-password" /></label>
+        <p class="hint" id="settings-feedback" hidden></p>
         <div id="server-settings" hidden>
           <div class="section">Serveur</div>
           <label>Adresse <input name="server" placeholder="ex. 192.168.1.20:3847" /></label>
@@ -212,10 +212,7 @@ function renderChrome() {
   if (send) send.disabled = offline;
   const gear = document.getElementById('gear');
   if (gear) gear.hidden = currentView() === 'setup';
-  const settings = document.getElementById('settings');
-  if (settings && !settings.hidden && currentView() === 'setup') {
-    settings.hidden = true;
-  }
+  if (currentView() === 'setup') forceCloseSettings();
   pushBadge();
 }
 
@@ -265,13 +262,15 @@ function mountSetup() {
   const form = document.createElement('form');
   form.className = 'setup';
   const hasAccount = hasLocalAccount();
+  // Jamais le panneau réglages pendant le setup (sinon il masque l’adresse serveur).
+  forceCloseSettings();
+
   if (!hasAccount) {
     form.innerHTML = `
       <div class="mark" aria-hidden="true"></div>
-      <p class="intro">Étape 1 — compte seulement (pseudo + mot de passe). Le serveur sera demandé juste après.</p>
+      <p class="intro">Crée ton compte (pseudo + mot de passe). Ensuite tu choisiras un serveur.</p>
       <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Par exemple Sam" autocomplete="username" /></label>
       <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="Au moins 4 caractères" autocomplete="new-password" /></label>
-      <label>Confirmer le mot de passe <input name="password2" type="password" maxlength="64" required autocomplete="new-password" /></label>
       <p class="hint">Même compte sur plusieurs PC : même pseudo + même mot de passe.</p>
       <p class="error" id="setup-error"></p>
       <button type="submit" class="primary">Créer ou se connecter</button>
@@ -282,8 +281,7 @@ function mountSetup() {
       event.preventDefault();
       createAccount({
         pseudo: form.pseudo.value,
-        password: form.password.value,
-        password2: form.password2.value
+        password: form.password.value
       });
     };
     return;
@@ -291,7 +289,7 @@ function mountSetup() {
 
   form.innerHTML = `
     <div class="mark" aria-hidden="true"></div>
-    <p class="intro">Étape 2 — compte <strong>${escapeHtml(state.profile.pseudo)}</strong> prêt. Choisis maintenant un serveur.</p>
+    <p class="intro">Compte <strong>${escapeHtml(state.profile.pseudo)}</strong> prêt. Entre l’adresse du serveur pour rejoindre le salon.</p>
     <label>Adresse du serveur <input name="server" required placeholder="ex. 192.168.1.20:3847" /></label>
     <label>Code (optionnel) <input name="code" maxlength="24" placeholder="Si le serveur en demande un" /></label>
     <p class="hint">Ce n’est pas ton compte : c’est juste où te connecter.</p>
@@ -314,15 +312,10 @@ function mountSetup() {
   });
 }
 
-async function createAccount({ pseudo, password, password2 }) {
+async function createAccount({ pseudo, password }) {
   const name = pseudo.trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
     state.setupError = 'Le pseudo doit faire au moins 2 caractères.';
-    mountSetup();
-    return;
-  }
-  if (password !== password2) {
-    state.setupError = 'Les mots de passe ne correspondent pas.';
     mountSetup();
     return;
   }
@@ -337,7 +330,8 @@ async function createAccount({ pseudo, password, password2 }) {
   state.profile = await window.deco.saveProfile({
     userId: state.profile.userId || crypto.randomUUID(),
     token,
-    pseudo: name
+    pseudo: name,
+    settingsOpen: false
   });
   state.setupError = '';
   state.forceSetup = true;
@@ -1042,21 +1036,42 @@ async function applyLink(payload, { quiet = false } = {}) {
   renderChrome();
 }
 
+function forceCloseSettings() {
+  const form = document.getElementById('settings');
+  if (form) form.hidden = true;
+  const tip = document.getElementById('settings-feedback');
+  if (tip) {
+    tip.hidden = true;
+    tip.textContent = '';
+  }
+}
+
+function setSettingsFeedback(text, isError = false) {
+  const tip = document.getElementById('settings-feedback');
+  if (!tip) {
+    if (text) toast(text);
+    return;
+  }
+  tip.hidden = !text;
+  tip.textContent = text || '';
+  tip.style.color = isError ? 'var(--red)' : 'var(--cyan)';
+}
+
 function openSettings() {
   const form = document.getElementById('settings');
   if (!form) return;
-  // Setup = uniquement compte / serveur via les écrans dédiés — pas le panneau réglages.
+  // Setup = écrans dédiés uniquement — jamais le panneau réglages par-dessus.
   if (!hasLocalAccount() || currentView() === 'setup' || !isInSalon()) {
-    form.hidden = true;
+    forceCloseSettings();
     return;
   }
   form.hidden = false;
   form.pseudo.value = state.profile.pseudo || '';
   form.password.value = '';
-  form.password2.value = '';
   form.server.value = state.profile.serverUrl || '';
   form.code.value = state.profile.roomCode || '';
   form.openCombo.value = state.profile.openCombo || 'ANGE';
+  setSettingsFeedback('');
   const serverBlock = document.getElementById('server-settings');
   const comboBlock = document.getElementById('open-combo-settings');
   if (serverBlock) serverBlock.hidden = false;
@@ -1088,11 +1103,10 @@ function updateComboHint(raw) {
 }
 
 function closeSettings() {
-  const form = document.getElementById('settings');
-  if (form) form.hidden = true;
+  forceCloseSettings();
   window.deco.saveProfile({ settingsOpen: false }).then((profile) => {
     state.profile = profile;
-  });
+  }).catch(() => {});
 }
 
 async function saveSettings(event) {
@@ -1100,6 +1114,7 @@ async function saveSettings(event) {
   const form = event.currentTarget;
   const name = form.pseudo.value.trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
+    setSettingsFeedback('Pseudo trop court.', true);
     toast('Pseudo trop court.');
     return;
   }
@@ -1107,15 +1122,13 @@ async function saveSettings(event) {
     pseudo: name,
     settingsOpen: false
   };
-  if (form.password.value || form.password2.value) {
-    if (form.password.value !== form.password2.value) {
-      toast('Les mots de passe ne correspondent pas.');
-      return;
-    }
+  if (form.password.value) {
     try {
       patch.token = await window.deco.hashPassword(name, form.password.value);
     } catch (err) {
-      toast(err?.message || 'Mot de passe invalide.');
+      const msg = err?.message || 'Mot de passe invalide (4 caractères min).';
+      setSettingsFeedback(msg, true);
+      toast(msg);
       return;
     }
   }
@@ -1123,6 +1136,7 @@ async function saveSettings(event) {
   if (comboBlock && !comboBlock.hidden) {
     const combo = String(form.openCombo?.value || 'ANGE').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (combo.length < 2) {
+      setSettingsFeedback('Mot-clé trop court (2–16 lettres/chiffres).', true);
       toast('Mot-clé trop court (2–16 lettres/chiffres).');
       return;
     }
@@ -1135,23 +1149,28 @@ async function saveSettings(event) {
       patch.roomCode = form.code.value.trim();
       patch.hosting = false;
     } catch {
+      setSettingsFeedback('Adresse serveur invalide.', true);
       toast('Adresse serveur invalide.');
       return;
     }
   }
-  if (state.profile.hosting && patch.serverUrl) {
-    await window.deco.stopHost();
-    state.host = { hosting: false, urls: [] };
-  }
-  state.profile = await window.deco.saveProfile(patch);
-  form.hidden = true;
-  form.password.value = '';
-  form.password2.value = '';
-  if (patch.serverUrl) {
-    state.forceSetup = false;
-    connect();
-  } else {
-    toast('Compte enregistré.');
+  try {
+    if (state.profile.hosting && patch.serverUrl) {
+      await window.deco.stopHost();
+      state.host = { hosting: false, urls: [] };
+    }
+    state.profile = await window.deco.saveProfile(patch);
+    form.password.value = '';
+    forceCloseSettings();
+    toast('Enregistré.');
+    if (patch.serverUrl) {
+      state.forceSetup = false;
+      connect();
+    }
+  } catch (err) {
+    const msg = err?.message || 'Impossible d’enregistrer.';
+    setSettingsFeedback(msg, true);
+    toast(msg);
   }
 }
 
