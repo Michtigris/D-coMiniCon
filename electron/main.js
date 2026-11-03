@@ -31,7 +31,7 @@ let chat = null;
 let bar = null;
 let tray = null;
 let profile = null;
-let chatVisible = false;
+let chatVisible = true;
 let openUp = true;
 let openLeft = false; // menu ancré à droite du logo → s’ouvre vers la gauche
 let chatSunk = false;
@@ -137,7 +137,7 @@ function defaultProfile() {
     hosting: false,
     x: null,
     y: null,
-    chatVisible: false,
+    chatVisible: true,
     settingsOpen: false,
     openCombo: 'ANGE',
     uiSize: 'normal',
@@ -307,8 +307,7 @@ function loadProfile() {
   profile = { ...defaultProfile(), ...readJson(profileFile(), {}) };
   profile.openCombo = normalizeOpenCombo(profile.openCombo);
   profile.uiSize = normalizeUiSize(profile.uiSize);
-  // Strict : seulement true si explicitement sauvé ouvert (évite faux « menu ouvert »).
-  chatVisible = profile.chatVisible === true;
+  chatVisible = profile.chatVisible !== false;
   applyOpenCombo(profile.openCombo);
   return profile;
 }
@@ -385,41 +384,7 @@ function decideOpenDir(barX, barY) {
   return { openUp: nextUp, openLeft: nextLeft };
 }
 
-/** Menu réellement à l’écran (pas seulement le flag mémoire). */
-function chatIsOnScreen() {
-  return !!(
-    !stashed
-    && chat
-    && !chat.isDestroyed()
-    && chat.isVisible()
-  );
-}
-
-/** Centre du menu dans l’aire utile — évite un panneau « ouvert » hors écran. */
-function chatFrameOnScreen() {
-  if (!chatIsOnScreen()) return false;
-  const b = chat.getBounds();
-  if (!b.width || !b.height) return false;
-  const cx = b.x + b.width / 2;
-  const cy = b.y + b.height / 2;
-  const area = screen.getDisplayNearestPoint({ x: Math.round(cx), y: Math.round(cy) }).workArea;
-  return cx >= area.x && cx <= area.x + area.width && cy >= area.y && cy <= area.y + area.height;
-}
-
-/** Aligne le flag chatVisible sur la fenêtre réelle. */
-function syncMenuState() {
-  if (stashed || !chat || chat.isDestroyed()) return;
-  const shown = chat.isVisible();
-  if (chatVisible && !shown) {
-    chatVisible = false;
-    chatSunk = false;
-  } else if (!chatVisible && shown) {
-    chatVisible = true;
-  }
-}
-
 function clampBar(barX, barY) {
-  syncMenuState();
   const bw = barW();
   const bh = barH();
   const cw = chatW();
@@ -432,8 +397,6 @@ function clampBar(barX, barY) {
   let x = Math.round(barX);
   let y = Math.round(barY);
 
-  // Réserver l’espace dès qu’on VEUT le menu (pas seulement s’il est déjà show).
-  // Sinon à l’ouverture près d’un bord le panneau naît hors écran → clic droit « mort ».
   if (chatVisible) {
     let chatO = chatOriginFor(x, y);
     if (chatO.x < area.x) x += area.x - chatO.x;
@@ -464,8 +427,7 @@ function cornerPosition() {
 function raiseChat() {
   if (!chat || chat.isDestroyed() || !chatVisible) return;
   try {
-    // Court alwaysOnTop pour remonter devant les autres fenêtres, puis on retire.
-    chat.setAlwaysOnTop(true, 'pop-up-menu');
+    chat.setAlwaysOnTop(false);
   } catch {
     // ignore
   }
@@ -475,29 +437,8 @@ function raiseChat() {
     log(`raise ${err.message}`);
   }
   if (!chat.isVisible()) chat.show();
-  else {
-    chat.show();
-    chat.moveTop();
-  }
-  try {
-    chat.focus();
-  } catch {
-    // ignore
-  }
+  else chat.moveTop();
   chatSunk = false;
-  setTimeout(() => {
-    if (!chat || chat.isDestroyed() || !chatVisible || chatSunk) return;
-    try {
-      chat.setAlwaysOnTop(false);
-    } catch {
-      // ignore
-    }
-    try {
-      if (win32) win32.raise(chat);
-    } catch {
-      // ignore
-    }
-  }, 250);
   tellBar();
 }
 
@@ -507,7 +448,6 @@ function windowsReady() {
 
 function layout(barX, barY) {
   if (!windowsReady()) return;
-  syncMenuState();
   const pos = clampBar(barX, barY);
   bar.setBounds({ x: pos.x, y: pos.y, width: barW(), height: barH() });
   if (chatVisible) {
@@ -515,7 +455,7 @@ function layout(barX, barY) {
     chat.setBounds({ x: chatO.x, y: chatO.y, width: chatW(), height: chatH() });
     if (!chat.isVisible()) chat.showInactive();
   } else {
-    if (chat.isVisible()) chat.hide();
+    chat.hide();
   }
   if (!bar.isVisible()) bar.showInactive();
   if (!dragging) bar.setAlwaysOnTop(true, 'screen-saver');
@@ -523,10 +463,6 @@ function layout(barX, barY) {
 }
 
 function openChatAroundLogo() {
-  stashed = false;
-  chatSunk = false;
-  setBarExpanded(false);
-  wakeBar();
   const anchor = barBounds();
   const dir = decideOpenDir(anchor.x, anchor.y);
   openUp = dir.openUp;
@@ -534,25 +470,29 @@ function openChatAroundLogo() {
   chatVisible = true;
   layout(anchor.x, anchor.y);
   raiseChat();
-  const b = chat && !chat.isDestroyed() ? chat.getBounds() : null;
-  log(`menu open ${b ? `${b.x},${b.y} ${b.width}x${b.height}` : '?'} up=${openUp} left=${openLeft}`);
 }
 
 function toggleChatWindow() {
-  syncMenuState();
   const anchor = barBounds();
-  // Pas clairement visible à l’écran → toujours OUVRIR (évite fermer un fantôme hors écran).
-  if (!menuIsLinked()) {
-    openChatAroundLogo();
+  // Menu non lié (fermé ou enfoncé) → un clic ouvre / remonte.
+  if (chatVisible && !menuIsLinked()) {
+    if (!chat || chat.isDestroyed() || !chat.isVisible()) {
+      openChatAroundLogo();
+    } else {
+      raiseChat();
+    }
     savePosition();
     return true;
   }
-  chatVisible = false;
-  chatSunk = false;
-  setBarExpanded(false);
-  layout(anchor.x, anchor.y);
+  if (!chatVisible) {
+    openChatAroundLogo();
+  } else {
+    chatVisible = false;
+    chatSunk = false;
+    layout(anchor.x, anchor.y);
+  }
   savePosition();
-  return false;
+  return chatVisible;
 }
 
 function savePosition() {
@@ -581,8 +521,6 @@ function finishDrag() {
 
 function beginDrag() {
   finishDrag();
-  syncMenuState();
-  wakeBar();
   dragging = true;
   const start = screen.getCursorScreenPoint();
   const origin = stackPos();
@@ -739,39 +677,23 @@ function stashApp() {
   updateTrayTip();
 }
 
-function wakeBar() {
-  if (!bar || bar.isDestroyed()) return;
-  try {
-    bar.setIgnoreMouseEvents(false);
-  } catch {
-    // ignore
-  }
-  if (!bar.isVisible()) bar.show();
-  else bar.showInactive();
-  bar.setAlwaysOnTop(true, 'screen-saver');
-  try {
-    bar.moveTop();
-  } catch {
-    // ignore
-  }
-  tellBar();
-}
-
 function revealApp() {
   if (!windowsReady()) return;
   if (!stashed && bar.isVisible()) {
-    wakeBar();
     if (chatVisible) {
       raiseChat();
       chat.show();
       chat.focus();
+    } else {
+      bar.moveTop();
     }
     return;
   }
   stashed = false;
   const pos = savedPosition();
   layout(pos.x, pos.y);
-  wakeBar();
+  bar.show();
+  bar.setAlwaysOnTop(true, 'screen-saver');
   if (chatVisible) {
     raiseChat();
     chat.show();
@@ -818,12 +740,15 @@ function menuIsOpen() {
 }
 
 function menuIsLinked() {
-  return menuIsOpen() && !chatSunk && chatFrameOnScreen();
+  return menuIsOpen() && !chatSunk;
 }
 
 function tellBar(extra = {}) {
   if (!bar || bar.isDestroyed()) return;
-  syncMenuState();
+  if (chatVisible && !menuIsOpen() && !stashed) {
+    chatVisible = false;
+    chatSunk = false;
+  }
   const open = menuIsOpen();
   const linked = menuIsLinked();
   bar.webContents.send('badge', lastBadge);
@@ -878,11 +803,16 @@ function createWindows() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: false,
-    // focusable: true — sinon après ANGE/Masquer, drag & clic droit peuvent mourir sur Windows.
-    focusable: true
+    // Pas de focus Windows (= pas de bordure accent orange au clic / Shift).
+    focusable: false
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  try {
+    bar.setFocusable(false);
+  } catch {
+    // ignore
+  }
   const index = path.join(__dirname, '..', 'src', 'index.html');
   chat.loadFile(index, { query: { view: 'chat' } });
   bar.loadFile(index, { query: { view: 'bar' } });
@@ -993,16 +923,7 @@ function setBarExpanded(on) {
   if (!bar || bar.isDestroyed()) return;
   const b = bar.getBounds();
   const width = on ? barExpandedW() : barW();
-  const height = barH();
-  // Ne jamais laisser une bande fantôme : largeur stricte logo ou logo+statut
-  bar.setBounds({ x: b.x, y: b.y, width, height });
-  if (!on) {
-    try {
-      bar.setContentSize(width, height);
-    } catch {
-      // ignore
-    }
-  }
+  bar.setBounds({ x: b.x, y: b.y, width, height: barH() });
 }
 
 function applyManualUpdate() {
@@ -1028,8 +949,6 @@ function applyManualUpdate() {
   }
 }
 
-let updateCheckPromise = null;
-
 async function checkUpdateManual() {
   if (!app.isPackaged || !updaterRef) {
     updateState = 'dev';
@@ -1038,44 +957,28 @@ async function checkUpdateManual() {
     tellUpdateStatus();
     return updatePayload();
   }
-  if (updateCheckPromise) return updateCheckPromise;
   updateState = 'checking';
   updateError = '';
   tellUpdateStatus();
-  updateCheckPromise = (async () => {
-    try {
-      const result = await Promise.race([
-        updaterRef.checkForUpdates(),
-        new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Délai dépassé')), 10000);
-        })
-      ]);
-      // Les events updater peuvent déjà avoir posé latest/available
-      if (updateState === 'checking') {
-        const remote = result?.updateInfo?.version;
-        if (remote && remote !== app.getVersion()) {
-          updateState = 'available';
-          updateRemoteVersion = remote;
-        } else {
-          updateState = 'latest';
-          updateRemoteVersion = '';
-        }
-        updateError = '';
-        tellUpdateStatus();
+  try {
+    const result = await updaterRef.checkForUpdates();
+    if (updateState === 'checking') {
+      const remote = result?.updateInfo?.version;
+      if (remote && remote !== app.getVersion()) {
+        updateState = 'available';
+        updateRemoteVersion = remote;
+      } else {
+        updateState = 'latest';
+        updateRemoteVersion = '';
       }
-    } catch (err) {
-      log(`updater check ${err.message}`);
-      if (updateState === 'checking') {
-        updateState = 'error';
-        updateError = err.message || 'Erreur màj';
-        tellUpdateStatus();
-      }
-    } finally {
-      updateCheckPromise = null;
+      tellUpdateStatus();
     }
-    return updatePayload();
-  })();
-  return updateCheckPromise;
+  } catch (err) {
+    updateState = 'error';
+    updateError = err.message || 'Vérification impossible';
+    tellUpdateStatus();
+  }
+  return updatePayload();
 }
 
 async function installUpdateManual() {
@@ -1114,8 +1017,6 @@ function setupUpdater() {
   try {
     const { autoUpdater } = require('electron-updater');
     updaterRef = autoUpdater;
-    // Provider GitHub natif (app-update.yml). Le feed « generic » vers
-    // /releases/latest/download/ cassait le check (404 latest.yml après redirect).
     autoUpdater.setFeedURL({
       provider: 'github',
       owner: 'Michtigris',
@@ -1156,9 +1057,9 @@ function setupUpdater() {
       applyManualUpdate();
     });
     autoUpdater.on('error', (err) => {
-      log(`updater ${err.message || err}`);
       updateState = 'error';
       updateError = err.message || 'Erreur màj';
+      log(`updater ${updateError}`);
       tellUpdateStatus();
     });
   } catch (err) {
@@ -1200,20 +1101,12 @@ function registerIpc() {
     return true;
   });
   ipcMain.on('drag:begin', () => beginDrag());
-  ipcMain.on('drag:end', () => finishDrag());
   ipcMain.on('menu:popup', () => popupAppMenu());
   ipcMain.on('bar:expand', (_event, on) => setBarExpanded(!!on));
   ipcMain.handle('update:check', () => checkUpdateManual());
   ipcMain.handle('update:install', () => installUpdateManual());
   ipcMain.handle('game:hide', () => hideGame());
-  ipcMain.on('chat:toggle', () => {
-    wakeBar();
-    toggleChatWindow();
-  });
-  ipcMain.handle('chat:toggle', () => {
-    wakeBar();
-    return toggleChatWindow();
-  });
+  ipcMain.handle('chat:toggle', () => toggleChatWindow());
   ipcMain.handle('chat:show', () => {
     if (!menuIsLinked()) toggleChatWindow();
     else revealApp();

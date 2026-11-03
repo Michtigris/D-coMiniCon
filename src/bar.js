@@ -109,29 +109,7 @@ function statusLabel(info) {
   }
 }
 
-const STATUS_MAX_MS = 5000;
-let statusWanted = false;
-let updateBusy = false;
-let lastUpdateCheckAt = 0;
-
-function hideStatus() {
-  clearTimeout(hideStatusTimer);
-  hideStatusTimer = 0;
-  statusBtn.hidden = true;
-  statusBtn.textContent = '';
-  statusBtn.classList.remove('can-update', 'is-ok', 'is-busy', 'is-err');
-  window.deco.expandBar(false);
-}
-
-/** Ferme le bandeau màj et ignore les réponses en retard (évite le bug clic G + clic D). */
-function dismissStatus() {
-  statusWanted = false;
-  cancelSingleClick();
-  hideStatus();
-}
-
 function renderStatus(info) {
-  if (!statusWanted) return;
   updateInfo = { ...updateInfo, ...(info || {}) };
   const clickable = updateInfo.status === 'available' || updateInfo.status === 'ready';
   statusBtn.hidden = false;
@@ -145,24 +123,28 @@ function renderStatus(info) {
     : (updateInfo.message || statusLabel(updateInfo));
   window.deco.expandBar(true);
   clearTimeout(hideStatusTimer);
-  hideStatusTimer = setTimeout(dismissStatus, STATUS_MAX_MS);
+  if (updateInfo.status === 'latest' || updateInfo.status === 'dev') {
+    hideStatusTimer = setTimeout(hideStatus, 3200);
+  } else if (updateInfo.status === 'error') {
+    hideStatusTimer = setTimeout(hideStatus, 4200);
+  }
+}
+
+function hideStatus() {
+  clearTimeout(hideStatusTimer);
+  hideStatusTimer = 0;
+  statusBtn.hidden = true;
+  statusBtn.classList.remove('can-update', 'is-ok', 'is-busy', 'is-err');
+  window.deco.expandBar(false);
 }
 
 async function runUpdateCheck() {
-  if (updateBusy) return;
-  updateBusy = true;
-  lastUpdateCheckAt = Date.now();
-  statusWanted = true;
   renderStatus({ status: 'checking', current: updateInfo.current });
   try {
     const info = await window.deco.checkUpdate();
-    if (!statusWanted) return;
-    renderStatus(info || { status: 'error', message: 'Erreur màj' });
+    renderStatus(info);
   } catch (err) {
-    if (!statusWanted) return;
-    renderStatus({ status: 'error', message: err?.message || 'Erreur màj' });
-  } finally {
-    updateBusy = false;
+    renderStatus({ status: 'error', message: err?.message || 'Vérification impossible' });
   }
 }
 
@@ -188,57 +170,24 @@ logo.addEventListener('pointerleave', () => {
   closeTimer = setTimeout(stopAnim, 160);
 });
 
-let rightClickAt = 0;
-function onRightClick(event) {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  const now = Date.now();
-  // pointerdown + contextmenu peuvent tous les deux partir → un seul toggle
-  if (now - rightClickAt < 400) return;
-  rightClickAt = now;
-  cancelSingleClick();
-  dismissStatus();
-  // Libère un éventuel grab gauche qui bloquait les clics suivants
-  pressing = false;
-  pausedForGrab = false;
-  press = null;
-  didDrag = false;
-  try {
-    if (event?.pointerId != null) logo.releasePointerCapture(event.pointerId);
-  } catch {
-    // ignore
-  }
-  window.deco.endDrag();
-  window.deco.toggleChat();
-}
-
 logo.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
   try {
     logo.blur();
   } catch {
     // ignore
   }
   if (event.button === 2) {
-    // preventDefault peut bloquer contextmenu : on toggle ici directement
-    onRightClick(event);
+    cancelSingleClick();
+    window.deco.toggleChat();
     return;
   }
   if (event.button !== 0) return;
   didDrag = false;
   pressing = true;
   press = { x: event.screenX, y: event.screenY };
-  try {
-    logo.setPointerCapture(event.pointerId);
-  } catch {
-    // ignore
-  }
+  logo.setPointerCapture(event.pointerId);
   finishAnimForGrab();
-});
-
-logo.addEventListener('auxclick', (event) => {
-  if (event.button === 2) onRightClick(event);
 });
 
 logo.addEventListener('pointermove', (event) => {
@@ -247,7 +196,8 @@ logo.addEventListener('pointermove', (event) => {
   const dy = event.screenY - press.y;
   if ((dx * dx) + (dy * dy) < DRAG_PX * DRAG_PX) return;
   didDrag = true;
-  dismissStatus();
+  cancelSingleClick();
+  hideStatus();
   window.deco.beginDrag();
 });
 
@@ -262,7 +212,6 @@ logo.addEventListener('pointerup', (event) => {
   press = null;
   didDrag = false;
   pressing = false;
-  window.deco.endDrag();
 
   // Relance seulement après lâcher + toujours sur le logo
   if (hovering) startFlipLoop();
@@ -280,7 +229,6 @@ logo.addEventListener('pointercancel', () => {
   didDrag = false;
   pressing = false;
   cancelSingleClick();
-  window.deco.endDrag();
   if (hovering) startFlipLoop();
   else {
     pausedForGrab = false;
@@ -291,36 +239,31 @@ logo.addEventListener('pointercancel', () => {
 logo.addEventListener('dblclick', (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
-  dismissStatus();
+  cancelSingleClick();
   pressing = false;
   pausedForGrab = false;
   hovering = false;
   stopAnim();
-  window.deco.endDrag();
+  hideStatus();
   window.deco.hideGame();
 });
 
 logo.addEventListener('contextmenu', (event) => {
-  onRightClick(event);
+  event.preventDefault();
 });
 
 statusBtn.addEventListener('click', async (event) => {
   event.preventDefault();
   if (updateInfo.status !== 'available' && updateInfo.status !== 'ready') return;
-  statusWanted = true;
   renderStatus({ ...updateInfo, status: updateInfo.status === 'ready' ? 'ready' : 'downloading' });
   try {
     await window.deco.installUpdate();
   } catch (err) {
-    if (!statusWanted) return;
     renderStatus({ status: 'error', message: err?.message || 'Installation impossible' });
   }
 });
 
-window.deco.on('update:status', (info) => {
-  if (!statusWanted) return;
-  renderStatus(info);
-});
+window.deco.on('update:status', renderStatus);
 
 window.deco.on('badge', (info) => {
   const unread = Number(info?.unread) || 0;
