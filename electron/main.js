@@ -474,6 +474,7 @@ function openChatAroundLogo() {
 
 function toggleChatWindow() {
   const anchor = barBounds();
+  log(`toggle chatVisible=${chatVisible} linked=${menuIsLinked()} visible=${!!(chat && !chat.isDestroyed() && chat.isVisible())}`);
   // Menu non lié (fermé ou enfoncé) → un clic ouvre / remonte.
   if (chatVisible && !menuIsLinked()) {
     if (!chat || chat.isDestroyed() || !chat.isVisible()) {
@@ -803,16 +804,12 @@ function createWindows() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: false,
-    // Pas de focus Windows (= pas de bordure accent orange au clic / Shift).
-    focusable: false
+    // focusable: true — sous Windows, focusable:false mange le clic droit
+    // (gauche / double-clic passent, mais button=2 / contextmenu ne partent pas).
+    focusable: true
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  try {
-    bar.setFocusable(false);
-  } catch {
-    // ignore
-  }
   const index = path.join(__dirname, '..', 'src', 'index.html');
   chat.loadFile(index, { query: { view: 'chat' } });
   bar.loadFile(index, { query: { view: 'bar' } });
@@ -1101,11 +1098,15 @@ function registerIpc() {
     return true;
   });
   ipcMain.on('drag:begin', () => beginDrag());
+  ipcMain.on('drag:end', () => finishDrag());
   ipcMain.on('menu:popup', () => popupAppMenu());
   ipcMain.on('bar:expand', (_event, on) => setBarExpanded(!!on));
   ipcMain.handle('update:check', () => checkUpdateManual());
   ipcMain.handle('update:install', () => installUpdateManual());
   ipcMain.handle('game:hide', () => hideGame());
+  ipcMain.on('chat:toggle', () => {
+    toggleChatWindow();
+  });
   ipcMain.handle('chat:toggle', () => toggleChatWindow());
   ipcMain.handle('chat:show', () => {
     if (!menuIsLinked()) toggleChatWindow();

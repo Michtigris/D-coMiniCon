@@ -170,24 +170,50 @@ logo.addEventListener('pointerleave', () => {
   closeTimer = setTimeout(stopAnim, 160);
 });
 
+let rightClickAt = 0;
+function onRightClick(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const now = Date.now();
+  // pointerdown + auxclick + contextmenu peuvent tous partir → un seul toggle
+  if (now - rightClickAt < 400) return;
+  rightClickAt = now;
+  cancelSingleClick();
+  hideStatus();
+  pressing = false;
+  press = null;
+  didDrag = false;
+  window.deco.toggleChat();
+}
+
 logo.addEventListener('pointerdown', (event) => {
-  event.preventDefault();
   try {
     logo.blur();
   } catch {
     // ignore
   }
   if (event.button === 2) {
-    cancelSingleClick();
-    window.deco.toggleChat();
+    onRightClick(event);
     return;
   }
   if (event.button !== 0) return;
+  // Évite le focus orange sans bloquer les autres boutons souris
+  event.preventDefault();
   didDrag = false;
   pressing = true;
   press = { x: event.screenX, y: event.screenY };
-  logo.setPointerCapture(event.pointerId);
+  try {
+    logo.setPointerCapture(event.pointerId);
+  } catch {
+    // ignore
+  }
   finishAnimForGrab();
+});
+
+logo.addEventListener('auxclick', (event) => {
+  if (event.button === 2) onRightClick(event);
 });
 
 logo.addEventListener('pointermove', (event) => {
@@ -249,7 +275,7 @@ logo.addEventListener('dblclick', (event) => {
 });
 
 logo.addEventListener('contextmenu', (event) => {
-  event.preventDefault();
+  onRightClick(event);
 });
 
 statusBtn.addEventListener('click', async (event) => {
