@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { app, BrowserWindow, Tray, Menu, Notification, clipboard, ipcMain, screen, session, nativeImage } = require('electron');
 
@@ -48,7 +49,7 @@ let angeConfirmUntil = 0;
 let angeLastNoise = 0;
 let openCombo = 'ANGE';
 let openKeys = [0x41, 0x4e, 0x47, 0x45];
-let hostInfo = { hosting: false, urls: [], self: '', port: 0 };
+let hostInfo = { hosting: false, urls: [], self: '', port: 0, roomCode: '', roomName: '' };
 let lastBadge = { connected: false, unread: 0, partner: '', call: '' };
 
 const PRE_SILENCE_MS = 500;
@@ -135,6 +136,7 @@ function defaultProfile() {
     email: '',
     serverUrl: 'http://127.0.0.1:3847',
     roomCode: '',
+    roomName: '',
     hosting: false,
     x: null,
     y: null,
@@ -1154,18 +1156,49 @@ function setupUpdater() {
   }
 }
 
-async function startHosting(roomCode) {
-  // Pas de salon.json local : le salon LAN reste en mémoire tant que l’hôte est ouvert.
-  // Le compte (pseudo / id / token) vit dans le profil utilisateur, pas dans le salon.
+async function startHosting(input = {}) {
+  const roomCode = String(input.roomCode || input || '').trim().toUpperCase();
+  const roomName = String(input.roomName || '').trim().slice(0, 32);
+  // Fichier hors asar (sinon ENOTDIR sous Electron packagé).
+  const dataFile = path.join(app.getPath('userData'), 'salon-live.json');
+  try {
+    fs.rmSync(dataFile, { force: true });
+  } catch {
+    // ignore
+  }
   const info = await start({
     port: 3847,
     host: '0.0.0.0',
-    roomCode: roomCode || '',
-    dataFile: null
+    roomCode,
+    roomName,
+    maxMembers: 2,
+    dataFile
   });
-  hostInfo = { hosting: true, urls: info.urls, self: info.self, port: info.port };
-  log(`Salon hébergé ${info.urls.join(', ') || info.self}`);
+  hostInfo = {
+    hosting: true,
+    urls: info.urls,
+    self: info.self,
+    port: info.port,
+    roomCode,
+    roomName
+  };
+  log(`Salon hébergé ${roomName || '?'} · ${roomCode} · ${info.urls.join(', ') || info.self}`);
   return { ok: true, ...hostInfo };
+}
+
+function lanCandidates() {
+  const ips = new Set(['127.0.0.1']);
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const net of list || []) {
+      const v4 = net.family === 'IPv4' || net.family === 4;
+      if (!v4 || net.internal) continue;
+      const parts = String(net.address || '').split('.');
+      if (parts.length !== 4) continue;
+      const base = parts.slice(0, 3).join('.');
+      for (let i = 1; i <= 254; i += 1) ips.add(`${base}.${i}`);
+    }
+  }
+  return [...ips];
 }
 
 function registerIpc() {
@@ -1221,24 +1254,27 @@ function registerIpc() {
     notice.show();
   });
   ipcMain.handle('app:version', () => app.getVersion());
-  ipcMain.handle('host:start', async (_event, roomCode) => {
+  ipcMain.handle('host:start', async (_event, payload) => {
     try {
-      const code = String(roomCode || '');
+      const input = payload && typeof payload === 'object'
+        ? payload
+        : { roomCode: String(payload || '') };
       if (hostInfo.hosting) await stop();
-      hostInfo = { hosting: false, urls: [], self: '', port: 0 };
-      return await startHosting(code);
+      hostInfo = { hosting: false, urls: [], self: '', port: 0, roomCode: '', roomName: '' };
+      return await startHosting(input);
     } catch (err) {
-      hostInfo = { hosting: false, urls: [], self: '', port: 0 };
+      hostInfo = { hosting: false, urls: [], self: '', port: 0, roomCode: '', roomName: '' };
       return { ok: false, message: err.message || 'Impossible d’héberger le salon.' };
     }
   });
   ipcMain.handle('host:stop', async () => {
     await stop();
-    hostInfo = { hosting: false, urls: [], self: '', port: 0 };
+    hostInfo = { hosting: false, urls: [], self: '', port: 0, roomCode: '', roomName: '' };
     saveProfile({ hosting: false });
     return { ok: true };
   });
   ipcMain.handle('host:info', () => hostInfo);
+  ipcMain.handle('lan:candidates', () => lanCandidates());
   ipcMain.handle('clipboard:write', (_event, text) => {
     clipboard.writeText(String(text || ''));
     return true;
@@ -1270,7 +1306,10 @@ if (gotLock) {
     registerIpc();
     if (profile.hosting) {
       try {
-        await startHosting(profile.roomCode || '');
+        await startHosting({
+          roomCode: profile.roomCode || '',
+          roomName: profile.roomName || ''
+        });
       } catch (err) {
         log(`host ${err.message}`);
         saveProfile({ hosting: false });

@@ -12,6 +12,7 @@ const state = {
   setupMode: 'login', // login | register | forgot
   setupPrefillEmail: '',
   accountGate: false, // force écran login/register même si un compte local existe
+  hubMode: 'home', // home | host | join
   me: null,
   users: [],
   friends: [],
@@ -274,8 +275,9 @@ function renderChrome() {
   if (input) input.disabled = offline;
   if (send) send.disabled = offline;
   const gear = document.getElementById('gear');
-  if (gear) gear.hidden = currentView() === 'setup';
-  if (currentView() === 'setup') forceCloseSettings();
+  // Réglages dès qu’un compte local existe (hub / salon / seul).
+  if (gear) gear.hidden = !hasLocalAccount() || inAccountGate();
+  if (inAccountGate()) forceCloseSettings();
   pushBadge();
   fitChatWindow();
 }
@@ -541,27 +543,202 @@ function mountSetup() {
     return;
   }
 
+  mountHub(body);
+}
+
+function makeRoomCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let out = '';
+  for (let i = 0; i < 5; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+function mountHub(body) {
+  const mode = state.hubMode === 'host' || state.hubMode === 'join' ? state.hubMode : 'home';
+  state.hubMode = mode;
+  const form = document.createElement('form');
+  form.className = 'setup hub';
+
+  if (mode === 'host') {
+    form.innerHTML = `
+      <label>Nom du salon <input name="roomName" maxlength="32" required placeholder="ex. soirée" autocomplete="off" /></label>
+      <p class="error" id="setup-error"></p>
+      <div class="setup-actions">
+        <button type="submit" class="primary">Héberger</button>
+        <button type="button" class="ghost" id="hub-back">Retour</button>
+      </div>
+    `;
+    body.replaceChildren(form);
+    if (state.profile?.roomName) form.roomName.value = state.profile.roomName;
+    form.querySelector('#setup-error').textContent = state.setupError || '';
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      hostSalon(form.roomName.value);
+    };
+    form.querySelector('#hub-back').onclick = () => {
+      state.setupError = '';
+      state.hubMode = 'home';
+      mountSetup();
+    };
+    fitChatWindow();
+    return;
+  }
+
+  if (mode === 'join') {
+    form.innerHTML = `
+      <label>Code <input name="code" maxlength="5" required placeholder="ABCDE" autocomplete="off" spellcheck="false" /></label>
+      <p class="error" id="setup-error"></p>
+      <div class="setup-actions">
+        <button type="submit" class="primary">Rejoindre</button>
+        <button type="button" class="ghost" id="hub-back">Retour</button>
+      </div>
+    `;
+    body.replaceChildren(form);
+    form.code.value = (state.profile?.roomCode || '').slice(0, 5);
+    form.code.addEventListener('input', () => {
+      form.code.value = form.code.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+    });
+    form.querySelector('#setup-error').textContent = state.setupError || '';
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      joinSalonByCode(form.code.value);
+    };
+    form.querySelector('#hub-back').onclick = () => {
+      state.setupError = '';
+      state.hubMode = 'home';
+      mountSetup();
+    };
+    fitChatWindow();
+    return;
+  }
+
   form.innerHTML = `
-    <label>Serveur <input name="server" required placeholder="IP:3847" /></label>
-    <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
     <p class="error" id="setup-error"></p>
-    <button type="submit" class="primary">Rejoindre</button>
-    <button type="button" class="ghost" id="host-now">Héberger LAN</button>
+    <div class="setup-actions">
+      <button type="button" class="primary" id="hub-join">Rejoindre</button>
+      <button type="button" class="ghost" id="hub-host">Héberger</button>
+    </div>
   `;
   body.replaceChildren(form);
-  form.server.value = state.profile?.serverUrl || 'http://127.0.0.1:3847';
-  form.code.value = state.profile?.roomCode || '';
   form.querySelector('#setup-error').textContent = state.setupError || '';
-  form.onsubmit = (event) => {
-    event.preventDefault();
-    joinServer({ server: form.server.value, code: form.code.value, host: false });
+  form.querySelector('#hub-join').onclick = () => {
+    state.setupError = '';
+    state.hubMode = 'join';
+    mountSetup();
   };
-  form.querySelector('#host-now').onclick = () => joinServer({
-    server: 'http://127.0.0.1:3847',
-    code: form.code.value,
-    host: true
-  });
+  form.querySelector('#hub-host').onclick = () => {
+    state.setupError = '';
+    state.hubMode = 'host';
+    mountSetup();
+  };
   fitChatWindow();
+}
+
+async function discoverServerByCode(code) {
+  const wanted = String(code || '').trim().toUpperCase();
+  if (!/^[A-Z]{5}$/.test(wanted)) return null;
+  const hosts = typeof window.deco.lanCandidates === 'function'
+    ? await window.deco.lanCandidates()
+    : ['127.0.0.1'];
+  const port = 3847;
+  const hits = await Promise.all(hosts.map(async (ip) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 400);
+    try {
+      const res = await fetch(`http://${ip}:${port}/health`, { signal: ctrl.signal });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.ok && String(data.roomCode || '').toUpperCase() === wanted) {
+        return {
+          url: `http://${ip}:${port}`,
+          roomName: data.roomName || '',
+          members: Number(data.members) || 0,
+          maxMembers: Number(data.maxMembers) || 2
+        };
+      }
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+    return null;
+  }));
+  return hits.find(Boolean) || null;
+}
+
+async function hostSalon(rawName) {
+  const roomName = String(rawName || '').trim().replace(/\s+/g, ' ');
+  if (roomName.length < 2) {
+    state.setupError = 'Le nom doit faire au moins 2 caractères.';
+    state.hubMode = 'host';
+    mountSetup();
+    return;
+  }
+  const roomCode = makeRoomCode();
+  state.setupError = '';
+  try {
+    const result = await window.deco.startHost({ roomCode, roomName });
+    if (!result?.ok) {
+      state.setupError = result?.message || 'Impossible d’héberger le salon.';
+      state.hubMode = 'host';
+      mountSetup();
+      return;
+    }
+    state.host = result;
+    state.profile = await window.deco.saveProfile({
+      hosting: true,
+      roomCode,
+      roomName,
+      serverUrl: 'http://127.0.0.1:3847',
+      settingsOpen: false
+    });
+    state.forceSetup = false;
+    state.hubMode = 'home';
+    toast('Salon ouvert');
+    connect();
+  } catch (err) {
+    state.setupError = err?.message || 'Impossible d’héberger le salon.';
+    state.hubMode = 'host';
+    mountSetup();
+  }
+}
+
+async function joinSalonByCode(rawCode) {
+  const roomCode = String(rawCode || '').trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+  if (roomCode.length !== 5) {
+    state.setupError = 'Le code fait 5 lettres.';
+    state.hubMode = 'join';
+    mountSetup();
+    return;
+  }
+  state.setupError = 'Recherche du salon…';
+  mountSetup();
+  const found = await discoverServerByCode(roomCode);
+  if (!found) {
+    state.setupError = 'Aucun salon trouvé avec ce code sur le réseau.';
+    state.hubMode = 'join';
+    mountSetup();
+    return;
+  }
+  if (found.members >= (found.maxMembers || 2)) {
+    state.setupError = `Salon complet (${found.maxMembers || 2}/${found.maxMembers || 2}).`;
+    state.hubMode = 'join';
+    mountSetup();
+    return;
+  }
+  state.profile = await window.deco.saveProfile({
+    hosting: false,
+    roomCode,
+    roomName: found.roomName || '',
+    serverUrl: found.url,
+    settingsOpen: false
+  });
+  state.forceSetup = false;
+  state.setupError = '';
+  state.hubMode = 'home';
+  connect();
 }
 
 async function createAccount({ email, password, pseudo }) {
@@ -699,41 +876,6 @@ async function resetLocalPassword({ email, password }) {
   toast('Mot de passe mis à jour');
 }
 
-async function joinServer({ server, code, host }) {
-  if (!hasLocalAccount()) {
-    state.setupError = 'Crée d’abord ton compte.';
-    mountSetup();
-    return;
-  }
-  let serverUrl;
-  try {
-    serverUrl = normalizeServer(server);
-  } catch {
-    state.setupError = 'Adresse du serveur invalide.';
-    mountSetup();
-    return;
-  }
-  state.profile = await window.deco.saveProfile({
-    serverUrl,
-    roomCode: String(code || '').trim(),
-    hosting: !!host
-  });
-  if (host) {
-    const result = await window.deco.startHost(String(code || '').trim());
-    if (!result.ok) {
-      state.setupError = result.message || 'Impossible d’héberger le salon.';
-      mountSetup();
-      return;
-    }
-    state.host = result;
-    state.profile = await window.deco.saveProfile({ hosting: true, serverUrl: 'http://127.0.0.1:3847' });
-    toast(`Adresse à donner : ${result.urls[0] || result.self}`);
-  }
-  state.forceSetup = false;
-  state.setupError = '';
-  connect();
-}
-
 function mountSalon() {
   const body = document.getElementById('body');
   body.innerHTML = '<div class="salon" id="salon"></div><p class="foot" id="foot"></p>';
@@ -744,16 +886,33 @@ function fillSalon() {
   const root = document.getElementById('salon');
   if (!root || !state.me) return;
   root.replaceChildren();
-  if (state.host?.hosting && state.host.urls?.length) {
-    const share = document.createElement('div');
-    share.className = 'share';
-    const p = document.createElement('p');
-    p.textContent = state.host.urls[0] || '';
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.append(actionButton('Copier', () => window.deco.copy(state.host.urls[0])));
-    share.append(p, row);
-    root.append(share);
+  const roomName = state.host?.roomName || state.profile?.roomName || '';
+  const roomCode = state.host?.roomCode || state.profile?.roomCode || '';
+  if (roomName || roomCode) {
+    const card = document.createElement('article');
+    card.className = 'room-card';
+    const top = document.createElement('div');
+    top.className = 'room-card-top';
+    const title = document.createElement('h2');
+    title.textContent = roomName || 'Salon';
+    const code = document.createElement('button');
+    code.type = 'button';
+    code.className = 'room-code';
+    code.textContent = roomCode || '—';
+    code.title = 'Copier le code';
+    code.onclick = () => {
+      if (!roomCode) return;
+      window.deco.copy(roomCode);
+      toast('Code copié');
+    };
+    top.append(title, code);
+    card.append(top);
+    const meta = document.createElement('p');
+    meta.className = 'hint';
+    const online = (state.users || []).filter((u) => u.online).length || 1;
+    meta.textContent = `${online}/2 · clique le code pour le copier`;
+    card.append(meta);
+    root.append(card);
   }
   if (state.partner || state.activeGroup) {
     const back = document.createElement('button');
@@ -1194,6 +1353,8 @@ async function dispatch(msg) {
     state.forceSetup = true;
     state.status = 'setup';
     state.setupError = msg.payload?.message || 'Entrée refusée.';
+    state.hubMode = /complet/i.test(state.setupError) ? 'join' : state.hubMode;
+    state.me = null;
     renderBody();
     return;
   }
@@ -1413,35 +1574,35 @@ function setSettingsFeedback(text, isError = false) {
 function openSettings() {
   const form = document.getElementById('settings');
   if (!form) return;
-  // Setup = écrans dédiés uniquement — jamais le panneau réglages par-dessus.
-  if (!hasLocalAccount() || currentView() === 'setup' || !isInSalon()) {
+  // Compte login/register : pas de réglages. Hub / salon / seul : OK.
+  if (!hasLocalAccount() || inAccountGate()) {
     forceCloseSettings();
     return;
   }
   form.hidden = false;
   form.pseudo.value = state.profile.pseudo || '';
   form.password.value = '';
-  form.server.value = state.profile.serverUrl || '';
-  form.code.value = state.profile.roomCode || '';
   form.openCombo.value = state.profile.openCombo || 'ANGE';
   setSettingsFeedback('');
   const serverBlock = document.getElementById('server-settings');
   const comboBlock = document.getElementById('open-combo-settings');
   const sizeBlock = document.getElementById('size-settings');
-  if (serverBlock) serverBlock.hidden = false;
+  if (serverBlock) serverBlock.hidden = true;
   if (comboBlock) comboBlock.hidden = false;
   if (sizeBlock) sizeBlock.hidden = false;
-  form.server.required = true;
+  if (form.server) form.server.required = false;
   updateComboHint(form.openCombo.value);
   form.openCombo.oninput = () => updateComboHint(form.openCombo.value);
   bindSizeSlider(form);
   const share = document.getElementById('share-settings');
   if (share) {
     share.replaceChildren();
-    if (state.host?.hosting && state.host.urls?.length) {
+    const roomCode = state.host?.roomCode || state.profile?.roomCode || '';
+    const roomName = state.host?.roomName || state.profile?.roomName || '';
+    if (roomName || roomCode) {
       const p = document.createElement('p');
       p.className = 'hint';
-      p.textContent = state.host.urls[0] || '';
+      p.textContent = [roomName, roomCode].filter(Boolean).join(' · ');
       share.append(p);
     }
   }

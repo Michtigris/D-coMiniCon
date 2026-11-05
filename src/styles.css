@@ -278,6 +278,37 @@ button:focus-visible,
   gap: 6px;
 }
 .setup { overflow: auto; gap: 8px; font-size: 15px; }
+.room-card {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 10px;
+  margin-bottom: 8px;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.room-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.room-card h2 {
+  margin: 0;
+  font-family: Fredoka, "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.room-code {
+  border: 0;
+  background: transparent;
+  color: var(--magenta);
+  font: 700 14px/1 Nunito, "Segoe UI", sans-serif;
+  letter-spacing: 0.12em;
+  padding: 0;
+  cursor: pointer;
+  clip-path: none;
+}
+.room-code:hover { color: var(--cyan); }
 .setup-actions {
   display: flex;
   flex-direction: column;

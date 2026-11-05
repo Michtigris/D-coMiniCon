@@ -31,9 +31,10 @@ contextBridge.exposeInMainWorld('deco', {
   badge: (payload) => ipcRenderer.send('badge', payload),
   version: () => ipcRenderer.invoke('app:version'),
   hashPassword: (pseudo, password) => ipcRenderer.invoke('crypto:password-hash', { pseudo, password }),
-  startHost: (roomCode) => ipcRenderer.invoke('host:start', roomCode),
+  startHost: (payload) => ipcRenderer.invoke('host:start', payload),
   stopHost: () => ipcRenderer.invoke('host:stop'),
   hostInfo: () => ipcRenderer.invoke('host:info'),
+  lanCandidates: () => ipcRenderer.invoke('lan:candidates'),
   copy: (text) => ipcRenderer.invoke('clipboard:write', text),
   on: (channel, callback) => {
     if (!CHANNELS.has(channel)) return () => {};

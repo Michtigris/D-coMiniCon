@@ -27,8 +27,13 @@ async function start(options = {}) {
   if (active) return active.publicInfo();
   const port = Number(options.port ?? process.env.PORT ?? 3847);
   const host = options.host || '0.0.0.0';
-  const roomCode = String(options.roomCode ?? process.env.DECO_CODE ?? '').trim();
-  const dataFile = options.dataFile || process.env.DECO_DATA || path.join(__dirname, 'data', 'store.json');
+  const roomCode = String(options.roomCode ?? process.env.DECO_CODE ?? '').trim().toUpperCase();
+  const roomName = String(options.roomName || '').trim().slice(0, 32);
+  const maxMembers = Math.max(1, Number(options.maxMembers) || 2);
+  // null = mémoire seule ; sinon fichier (évite d’écrire dans asar → ENOTDIR)
+  const dataFile = Object.prototype.hasOwnProperty.call(options, 'dataFile')
+    ? options.dataFile
+    : (process.env.DECO_DATA || path.join(__dirname, 'data', 'store.json'));
   const store = openStore(dataFile);
   // Plusieurs sockets par compte (même pseudo sur plusieurs PC).
   const sessions = new Map();
@@ -38,7 +43,13 @@ async function start(options = {}) {
   const server = http.createServer((req, res) => {
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({
+        ok: true,
+        roomCode,
+        roomName,
+        members: sessions.size,
+        maxMembers
+      }));
       return;
     }
     res.writeHead(404);
@@ -187,10 +198,14 @@ async function start(options = {}) {
 
   function handle(socket, msg) {
     if (msg.type === 'auth') {
-      const code = String(msg.payload?.roomCode || '').trim();
+      const code = String(msg.payload?.roomCode || '').trim().toUpperCase();
       if (roomCode && code !== roomCode) throw new Error('Code du salon incorrect.');
       const user = store.auth(msg.payload || {});
       if (socket.userId && socket.userId !== user.id) removeSession(socket.userId, socket);
+      const alreadyIn = socketsOf(user.id).size > 0;
+      if (!alreadyIn && sessions.size >= maxMembers) {
+        throw new Error(`Salon complet (${maxMembers}/${maxMembers}).`);
+      }
       socket.userId = user.id;
       addSession(user.id, socket);
       const partnerId = store.getLink(user.id);
