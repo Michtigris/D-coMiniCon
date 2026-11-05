@@ -121,7 +121,6 @@ function shell() {
         </div>
         <div class="top-actions">
           <button type="button" class="icon-btn" id="gear" aria-label="Réglages">⚙</button>
-          <button type="button" class="icon-btn" id="min" aria-label="Cacher la fenêtre">–</button>
         </div>
       </header>
       <div id="statusline" class="statusline" hidden></div>
@@ -161,7 +160,6 @@ function shell() {
     window.deco.beginDrag();
   });
   document.getElementById('gear').onclick = openSettings;
-  document.getElementById('min').onclick = () => window.deco.toggleChat();
   document.getElementById('settings').onsubmit = saveSettings;
   document.getElementById('close-settings').onclick = () => closeSettings();
   window.addEventListener('focus', () => {
@@ -250,10 +248,10 @@ function renderChrome() {
       tag.textContent = state.partner.online ? state.partner.pseudo : `${state.partner.pseudo} · off`;
     } else if (view === 'salon') {
       tag.textContent = 'Salon';
-    } else if (state.profile?.pseudo && state.profile?.token) {
-      tag.textContent = 'Serveur';
+    } else if (view === 'group' && state.activeGroup) {
+      tag.textContent = state.activeGroup.name || 'Groupe';
     } else {
-      tag.textContent = 'Compte';
+      tag.textContent = '';
     }
   }
   const line = document.getElementById('statusline');
