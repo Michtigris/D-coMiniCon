@@ -10,6 +10,8 @@ const state = {
   forceSetup: false,
   setupError: '',
   setupMode: 'login', // login | register | forgot
+  setupPrefillEmail: '',
+  accountGate: false, // force écran login/register même si un compte local existe
   me: null,
   users: [],
   friends: [],
@@ -349,6 +351,22 @@ function hasLocalAccount() {
   return !!(state.profile?.userId && state.profile?.token && state.profile?.pseudo);
 }
 
+function inAccountGate() {
+  return !hasLocalAccount() || state.accountGate;
+}
+
+function prefillEmailValue() {
+  return state.setupPrefillEmail || state.profile?.email || '';
+}
+
+function goToLoginWithEmail(email, message = '') {
+  state.setupPrefillEmail = email || '';
+  state.setupMode = 'login';
+  state.accountGate = true;
+  state.setupError = message;
+  mountSetup();
+}
+
 function isInSalon() {
   return !!(state.me && !state.forceSetup);
 }
@@ -373,11 +391,10 @@ function mountSetup() {
   const body = document.getElementById('body');
   const form = document.createElement('form');
   form.className = 'setup';
-  const hasAccount = hasLocalAccount();
   // Jamais le panneau réglages pendant le setup (sinon il masque l’adresse serveur).
   forceCloseSettings();
 
-  if (!hasAccount) {
+  if (inAccountGate()) {
     const mode = state.setupMode === 'register' || state.setupMode === 'forgot' ? state.setupMode : 'login';
     state.setupMode = mode;
     if (mode === 'register') {
@@ -392,6 +409,7 @@ function mountSetup() {
         </div>
       `;
       body.replaceChildren(form);
+      form.email.value = prefillEmailValue();
       form.querySelector('#setup-error').textContent = state.setupError || '';
       form.onsubmit = (event) => {
         event.preventDefault();
@@ -402,6 +420,7 @@ function mountSetup() {
         });
       };
       form.querySelector('#back-login').onclick = () => {
+        state.setupPrefillEmail = form.email.value.trim().toLowerCase();
         state.setupError = '';
         state.setupMode = 'login';
         mountSetup();
@@ -421,7 +440,7 @@ function mountSetup() {
         </div>
       `;
       body.replaceChildren(form);
-      if (state.profile?.email) form.email.value = state.profile.email;
+      form.email.value = prefillEmailValue();
       form.querySelector('#setup-error').textContent = state.setupError || '';
       form.onsubmit = (event) => {
         event.preventDefault();
@@ -454,7 +473,7 @@ function mountSetup() {
       </div>
     `;
     body.replaceChildren(form);
-    if (state.profile?.email) form.email.value = state.profile.email;
+    form.email.value = prefillEmailValue();
     form.querySelector('#setup-error').textContent = state.setupError || '';
     form.onsubmit = (event) => {
       event.preventDefault();
@@ -464,11 +483,13 @@ function mountSetup() {
       });
     };
     form.querySelector('#go-register').onclick = () => {
+      state.setupPrefillEmail = form.email.value.trim().toLowerCase();
       state.setupError = '';
       state.setupMode = 'register';
       mountSetup();
     };
     form.querySelector('#forgot-password').onclick = () => {
+      state.setupPrefillEmail = form.email.value.trim().toLowerCase();
       state.setupError = '';
       state.setupMode = 'forgot';
       mountSetup();
@@ -512,6 +533,10 @@ async function createAccount({ email, password, pseudo }) {
     mountSetup();
     return;
   }
+  if (hasLocalAccount() && state.profile?.email && state.profile.email.toLowerCase() === mail) {
+    goToLoginWithEmail(mail, 'Un compte existe déjà avec cette adresse.');
+    return;
+  }
   const name = String(pseudo || '').trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
     state.setupError = 'Le pseudo doit faire au moins 2 caractères.';
@@ -535,11 +560,9 @@ async function createAccount({ email, password, pseudo }) {
     email: mail,
     settingsOpen: false
   });
-  state.setupError = '';
-  state.setupMode = 'login';
   state.forceSetup = true;
-  toast('Compte créé');
-  mountSetup();
+  goToLoginWithEmail(mail, '');
+  toast('Compte créé — connecte-toi');
 }
 
 async function loginAccount({ email, password }) {
@@ -582,7 +605,9 @@ async function loginAccount({ email, password }) {
   }
   state.profile = await window.deco.saveProfile({ email: mail, settingsOpen: false });
   state.setupError = '';
+  state.setupPrefillEmail = mail;
   state.setupMode = 'login';
+  state.accountGate = false;
   state.forceSetup = true;
   toast('Connecté');
   mountSetup();
@@ -627,10 +652,8 @@ async function resetLocalPassword({ email, password }) {
     token,
     settingsOpen: false
   });
-  state.setupError = '';
-  state.setupMode = 'login';
+  goToLoginWithEmail(mail, '');
   toast('Mot de passe mis à jour');
-  mountSetup();
 }
 
 async function joinServer({ server, code, host }) {
