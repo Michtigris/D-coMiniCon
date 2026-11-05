@@ -1691,13 +1691,20 @@ function bindSizeSlider(form) {
   const current = state.profile.uiSize || 'normal';
   slider.value = String(uiSizeIndex(current));
   updateSizeLabel(current);
+  // Aperçu du libellé pendant le drag ; applique la taille au relâchement.
   slider.oninput = () => {
+    updateSizeLabel(uiSizeFromIndex(slider.value));
+  };
+  const applySize = () => {
     const size = uiSizeFromIndex(slider.value);
     updateSizeLabel(size);
+    if (size === (state.profile?.uiSize || 'normal')) return;
     window.deco.saveProfile({ uiSize: size }).then((profile) => {
       state.profile = profile;
     }).catch(() => {});
   };
+  slider.onchange = applySize;
+  slider.onpointerup = applySize;
 }
 
 function closeSettings() {
