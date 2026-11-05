@@ -5,7 +5,8 @@ const CHANNELS = new Set([
   'badge',
   'game:result',
   'chat:visible',
-  'update:status'
+  'update:status',
+  'chat:refit'
 ]);
 
 contextBridge.exposeInMainWorld('deco', {
@@ -18,6 +19,7 @@ contextBridge.exposeInMainWorld('deco', {
   hideGame: () => ipcRenderer.invoke('game:hide'),
   // send (pas invoke) : le clic droit ne doit pas attendre une promesse IPC
   toggleChat: () => ipcRenderer.send('chat:toggle'),
+  fitChat: (height) => ipcRenderer.send('chat:fit', height),
   showChat: () => ipcRenderer.invoke('chat:show'),
   snap: () => ipcRenderer.invoke('window:snap'),
   popupMenu: () => ipcRenderer.send('menu:popup'),

@@ -163,6 +163,33 @@ function chatH() {
   return Math.round(BASE_CHAT_H * uiScale());
 }
 
+/** Hauteur réelle de la fenêtre chat (≤ chatH). Null = plein format. */
+let chatFitH = null;
+
+function liveChatH() {
+  const max = chatH();
+  const min = Math.round(150 * uiScale());
+  if (chatFitH == null) return max;
+  return Math.min(max, Math.max(min, chatFitH));
+}
+
+/** cssHeight : hauteur CSS du contenu ; ≥ 1e8 ou invalide → max. */
+function setChatFit(cssHeight) {
+  const z = uiScale();
+  const max = chatH();
+  const min = Math.round(150 * z);
+  const raw = Number(cssHeight);
+  const next = !Number.isFinite(raw) || raw >= 1e8
+    ? max
+    : Math.round(Math.min(max, Math.max(min, raw * z)));
+  if (chatFitH === next) return;
+  chatFitH = next;
+  if (windowsReady()) {
+    const pos = stackPos();
+    layout(pos.x, pos.y);
+  }
+}
+
 function barW() {
   return Math.round(BASE_BAR * uiScale());
 }
@@ -177,6 +204,7 @@ function barExpandedW() {
 
 function applyUiScale() {
   const z = uiScale();
+  chatFitH = null;
   try {
     if (chat && !chat.isDestroyed()) chat.webContents.setZoomFactor(z);
   } catch {
@@ -190,6 +218,11 @@ function applyUiScale() {
   if (windowsReady()) {
     const pos = stackPos();
     layout(pos.x, pos.y);
+  }
+  try {
+    if (chat && !chat.isDestroyed()) chat.webContents.send('chat:refit');
+  } catch {
+    // ignore
   }
 }
 
@@ -352,7 +385,7 @@ function chatOriginFor(barX, barY) {
   const bw = barW();
   const bh = barH();
   const cw = chatW();
-  const ch = chatH();
+  const ch = liveChatH();
   return {
     x: openLeft ? barX + bw - cw : barX,
     y: openUp ? barY - ch + 1 : barY + bh - 1
@@ -388,7 +421,7 @@ function clampBar(barX, barY) {
   const bw = barW();
   const bh = barH();
   const cw = chatW();
-  const ch = chatH();
+  const ch = liveChatH();
   const display = screen.getDisplayNearestPoint({
     x: Math.round(barX + bw / 2),
     y: Math.round(barY + bh / 2)
@@ -452,7 +485,7 @@ function layout(barX, barY) {
   bar.setBounds({ x: pos.x, y: pos.y, width: barW(), height: barH() });
   if (chatVisible) {
     const chatO = chatOriginFor(pos.x, pos.y);
-    chat.setBounds({ x: chatO.x, y: chatO.y, width: chatW(), height: chatH() });
+    chat.setBounds({ x: chatO.x, y: chatO.y, width: chatW(), height: liveChatH() });
     if (!chat.isVisible()) chat.showInactive();
   } else {
     chat.hide();
@@ -1104,6 +1137,7 @@ function registerIpc() {
   ipcMain.handle('update:check', () => checkUpdateManual());
   ipcMain.handle('update:install', () => installUpdateManual());
   ipcMain.handle('game:hide', () => hideGame());
+  ipcMain.on('chat:fit', (_event, height) => setChatFit(height));
   ipcMain.on('chat:toggle', () => {
     toggleChatWindow();
   });

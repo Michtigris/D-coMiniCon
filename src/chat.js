@@ -276,6 +276,39 @@ function renderChrome() {
   if (gear) gear.hidden = currentView() === 'setup';
   if (currentView() === 'setup') forceCloseSettings();
   pushBadge();
+  fitChatWindow();
+}
+
+/** Hauteur fenêtre : compacte sur setup, pleine (plafond actuel) sinon. */
+function fitChatWindow() {
+  if (typeof window.deco?.fitChat !== 'function') return;
+  const run = () => {
+    const settings = document.getElementById('settings');
+    const settingsOpen = !!(settings && !settings.hidden);
+    if (currentView() !== 'setup' && !settingsOpen) {
+      window.deco.fitChat(1e9);
+      return;
+    }
+    const top = document.querySelector('.top');
+    const status = document.getElementById('statusline');
+    const call = document.getElementById('call');
+    const body = document.getElementById('body');
+    let h = 2;
+    const addBox = (el) => {
+      if (!el || el.hidden) return;
+      h += el.getBoundingClientRect().height;
+    };
+    addBox(top);
+    addBox(status);
+    addBox(call);
+    if (settingsOpen) {
+      h += Math.ceil(settings.scrollHeight) + 6;
+    } else if (body?.firstElementChild) {
+      h += Math.ceil(body.firstElementChild.scrollHeight);
+    }
+    window.deco.fitChat(Math.ceil(h));
+  };
+  requestAnimationFrame(() => requestAnimationFrame(run));
 }
 
 function renderCall() {
@@ -343,6 +376,7 @@ function mountSetup() {
         password: form.password.value
       });
     };
+    fitChatWindow();
     return;
   }
 
@@ -366,6 +400,7 @@ function mountSetup() {
     code: form.code.value,
     host: true
   });
+  fitChatWindow();
 }
 
 async function createAccount({ pseudo, password }) {
@@ -1144,6 +1179,7 @@ function openSettings() {
   window.deco.saveProfile({ settingsOpen: true }).then((profile) => {
     state.profile = profile;
   });
+  fitChatWindow();
 }
 
 function updateComboHint(raw) {
@@ -1197,6 +1233,7 @@ function closeSettings() {
   window.deco.saveProfile({ settingsOpen: false }).then((profile) => {
     state.profile = profile;
   }).catch(() => {});
+  fitChatWindow();
 }
 
 async function saveSettings(event) {
@@ -1280,6 +1317,10 @@ async function init() {
     else syncMessages();
     if (state.profile?.settingsOpen) openSettings();
   });
+  window.deco.on('chat:refit', () => fitChatWindow());
+  if (document.fonts?.ready) {
+    document.fonts.ready.then(() => fitChatWindow()).catch(() => {});
+  }
   if (state.profile.pseudo && state.profile.userId && state.profile.token) {
     if (state.profile.serverUrl) connect();
     else {
