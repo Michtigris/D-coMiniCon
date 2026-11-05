@@ -151,8 +151,7 @@ function shell() {
             <span id="size-label">Normale</span>
           </label>
         </div>
-        <button type="submit" class="primary">OK</button>
-        <button type="button" class="ghost" id="close-settings">Fermer</button>
+        <button type="submit" class="primary">Enregistrer</button>
       </form>
     </div>
   `;
@@ -162,7 +161,6 @@ function shell() {
   });
   document.getElementById('gear').onclick = openSettings;
   document.getElementById('settings').onsubmit = saveSettings;
-  document.getElementById('close-settings').onclick = () => closeSettings();
   window.addEventListener('focus', () => {
     state.unread = 0;
     pushBadge();
