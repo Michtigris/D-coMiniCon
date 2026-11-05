@@ -530,8 +530,7 @@ input:focus {
   position: absolute;
   inset: 36px 8px 8px;
   z-index: 5;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.96));
+  background: #f7fafc;
   border: 1px solid rgba(197, 208, 220, 0.9);
   border-radius: 0;
   padding: 12px 12px 10px;
@@ -548,6 +547,10 @@ input:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+/* display:flex écrase sinon l’attribut HTML hidden → pages superposées */
+.settings-stack[hidden] {
+  display: none !important;
 }
 .settings .field {
   display: flex;

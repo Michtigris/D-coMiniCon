@@ -1584,6 +1584,8 @@ async function applyLink(payload, { quiet = false } = {}) {
 function forceCloseSettings() {
   const form = document.getElementById('settings');
   if (form) form.hidden = true;
+  const body = document.getElementById('body');
+  if (body) body.hidden = false;
   state.settingsPage = 'main';
   showSettingsPage('main');
   const tip = document.getElementById('settings-feedback');
@@ -1670,9 +1672,18 @@ function showSettingsPage(page) {
   const main = document.getElementById('settings-page-main');
   const experimental = document.getElementById('settings-page-experimental');
   const camera = document.getElementById('settings-page-camera');
-  if (main) main.hidden = page !== 'main';
-  if (experimental) experimental.hidden = page !== 'experimental';
-  if (camera) camera.hidden = page !== 'camera';
+  const pages = [
+    [main, 'main'],
+    [experimental, 'experimental'],
+    [camera, 'camera']
+  ];
+  for (const [el, name] of pages) {
+    if (!el) continue;
+    const on = page === name;
+    el.hidden = !on;
+    el.setAttribute('aria-hidden', on ? 'false' : 'true');
+    el.style.display = on ? '' : 'none';
+  }
   const form = document.getElementById('settings');
   if (form?.pseudo) form.pseudo.required = page === 'main';
   if (page === 'experimental') syncExperimentalMasterUi();
@@ -1884,6 +1895,8 @@ function openSettings() {
     return;
   }
   form.hidden = false;
+  const body = document.getElementById('body');
+  if (body) body.hidden = true;
   showSettingsPage('main');
   bindSettingsNav();
   form.pseudo.value = state.profile.pseudo || '';
