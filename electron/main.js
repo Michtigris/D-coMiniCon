@@ -134,6 +134,7 @@ function defaultProfile() {
     token: null,
     pseudo: '',
     email: '',
+    pseudoChangedAt: null,
     serverUrl: 'http://127.0.0.1:3847',
     roomCode: '',
     roomName: '',

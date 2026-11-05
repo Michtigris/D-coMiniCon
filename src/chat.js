@@ -131,7 +131,7 @@ function shell() {
       <form id="settings" class="settings" hidden>
         <div class="section">Compte</div>
         <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
-        <label>Mdp <input name="password" type="password" maxlength="64" placeholder="Inchangé si vide" autocomplete="new-password" /></label>
+        <p class="hint" id="pseudo-cooldown" hidden></p>
         <p class="hint" id="settings-feedback" hidden></p>
         <div id="server-settings" hidden>
           <div class="section">Serveur</div>
@@ -778,6 +778,7 @@ async function createAccount({ email, password, pseudo }) {
     token,
     pseudo: name,
     email: mail,
+    pseudoChangedAt: Date.now(),
     settingsOpen: false
   });
   state.forceSetup = true;
@@ -1562,13 +1563,54 @@ function forceCloseSettings() {
 
 function setSettingsFeedback(text, isError = false) {
   const tip = document.getElementById('settings-feedback');
+  const msg = text == null || text === ''
+    ? ''
+    : (typeof text === 'string' ? text : (text?.message || String(text)));
   if (!tip) {
-    if (text) toast(text);
+    if (msg) toast(msg);
     return;
   }
-  tip.hidden = !text;
-  tip.textContent = text || '';
+  tip.hidden = !msg;
+  tip.textContent = msg;
   tip.style.color = isError ? 'var(--red)' : 'var(--cyan)';
+}
+
+const PSEUDO_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+function pseudoCooldownLeft() {
+  const at = Number(state.profile?.pseudoChangedAt) || 0;
+  if (!at) return 0;
+  return Math.max(0, at + PSEUDO_COOLDOWN_MS - Date.now());
+}
+
+function formatCooldown(ms) {
+  const day = 24 * 60 * 60 * 1000;
+  const hour = 60 * 60 * 1000;
+  if (ms >= day) return `${Math.ceil(ms / day)} j`;
+  if (ms >= hour) return `${Math.ceil(ms / hour)} h`;
+  const min = Math.max(1, Math.ceil(ms / (60 * 1000)));
+  return `${min} min`;
+}
+
+function syncPseudoCooldownUi(form) {
+  const tip = document.getElementById('pseudo-cooldown');
+  const input = form?.pseudo;
+  const left = pseudoCooldownLeft();
+  const locked = left > 0;
+  if (input) {
+    input.disabled = locked;
+    input.title = locked
+      ? `Prochain changement possible dans ${formatCooldown(left)}`
+      : '';
+  }
+  if (!tip) return;
+  if (locked) {
+    tip.hidden = false;
+    tip.textContent = `Pseudo modifiable dans ${formatCooldown(left)} (1 semaine entre chaque changement).`;
+  } else {
+    tip.hidden = false;
+    tip.textContent = '1 semaine d’attente après création ou changement de pseudo.';
+  }
 }
 
 function openSettings() {
@@ -1581,9 +1623,9 @@ function openSettings() {
   }
   form.hidden = false;
   form.pseudo.value = state.profile.pseudo || '';
-  form.password.value = '';
   form.openCombo.value = state.profile.openCombo || 'ANGE';
   setSettingsFeedback('');
+  syncPseudoCooldownUi(form);
   const serverBlock = document.getElementById('server-settings');
   const comboBlock = document.getElementById('open-combo-settings');
   const sizeBlock = document.getElementById('size-settings');
@@ -1669,26 +1711,30 @@ function closeSettings() {
 async function saveSettings(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const currentName = String(state.profile?.pseudo || '');
   const name = form.pseudo.value.trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
     setSettingsFeedback('Pseudo trop court.', true);
     toast('Pseudo trop court.');
     return;
   }
-  const patch = {
-    pseudo: name,
-    settingsOpen: false
-  };
-  if (form.password.value) {
-    try {
-      requireNewPassword(form.password.value);
-      patch.token = await window.deco.hashPassword(name, form.password.value);
-    } catch (err) {
-      const msg = err?.message || 'Mot de passe invalide (8 caractères min).';
+  const renaming = name !== currentName;
+  if (renaming) {
+    const left = pseudoCooldownLeft();
+    if (left > 0) {
+      const msg = `Pseudo verrouillé encore ${formatCooldown(left)}.`;
       setSettingsFeedback(msg, true);
       toast(msg);
+      syncPseudoCooldownUi(form);
       return;
     }
+  }
+  const patch = {
+    settingsOpen: false
+  };
+  if (renaming) {
+    patch.pseudo = name;
+    patch.pseudoChangedAt = Date.now();
   }
   const comboBlock = document.getElementById('open-combo-settings');
   if (comboBlock && !comboBlock.hidden) {
@@ -1704,31 +1750,10 @@ async function saveSettings(event) {
   if (sizeBlock && !sizeBlock.hidden && form.uiSize) {
     patch.uiSize = uiSizeFromIndex(form.uiSize.value);
   }
-  const serverBlock = document.getElementById('server-settings');
-  if (serverBlock && !serverBlock.hidden && form.server?.value) {
-    try {
-      patch.serverUrl = normalizeServer(form.server.value);
-      patch.roomCode = form.code.value.trim();
-      patch.hosting = false;
-    } catch {
-      setSettingsFeedback('Adresse serveur invalide.', true);
-      toast('Adresse serveur invalide.');
-      return;
-    }
-  }
   try {
-    if (state.profile.hosting && patch.serverUrl) {
-      await window.deco.stopHost();
-      state.host = { hosting: false, urls: [] };
-    }
     state.profile = await window.deco.saveProfile(patch);
-    form.password.value = '';
     forceCloseSettings();
     toast('Enregistré.');
-    if (patch.serverUrl) {
-      state.forceSetup = false;
-      connect();
-    }
   } catch (err) {
     const msg = err?.message || 'Impossible d’enregistrer.';
     setSettingsFeedback(msg, true);
