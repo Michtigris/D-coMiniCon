@@ -260,10 +260,15 @@ async function openCameraUrl(raw) {
   const url = normalizeUrl(raw);
   if (!url) return { ok: false, reason: 'Lien vide' };
   try {
-    await shell.openExternal(url);
-    return { ok: true };
+    const { openOrFocusUrl } = require('./browserUrl');
+    return await openOrFocusUrl(url, (target) => shell.openExternal(target));
   } catch (err) {
-    return { ok: false, reason: err.message || 'Lien impossible' };
+    try {
+      await shell.openExternal(url);
+      return { ok: true, opened: true };
+    } catch (err2) {
+      return { ok: false, reason: err2.message || err.message || 'Lien impossible' };
+    }
   }
 }
 
