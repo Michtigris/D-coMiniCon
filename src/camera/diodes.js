@@ -36,6 +36,10 @@ function tickHold(hold, active, now) {
   hold.fired = false;
 }
 
+function off() {
+  return { diode1: false, diode2: false, diode3: false, diode4: false, diode5: false, diode6: false };
+}
+
 export function createDiodeEngine() {
   const holds = {
     triangle: createHold(),
@@ -52,9 +56,19 @@ export function createDiodeEngine() {
       const landmarks = result?.landmarks || [];
       const handedness = result?.handedness || [];
       const seen = visibleHands(landmarks, handedness);
+
+      // Aucune action sans les DEUX mains visibles.
+      if (!seen.landmarks || seen.landmarks.length < 2) {
+        for (const hold of Object.values(holds)) {
+          hold.since = 0;
+          hold.fired = false;
+        }
+        burnsOn = false;
+        return off();
+      }
+
       const pose = evaluateHands(seen.landmarks);
 
-      // Diode 1 : pose active tout de suite (le hold 300 ms / cooldown sont dans runner).
       const triangle = isTriangle(pose);
       tickHold(holds.triangle, triangle, now);
       const diode1 = triangle || midLit(holds.triangle, now);
@@ -68,26 +82,24 @@ export function createDiodeEngine() {
       else burnsOn = false;
       const diode2 = burnsOn;
 
+      // 3–6 : les deux côtés doivent faire le geste (plus de tir à une seule main).
       const pinches = pinchSides(seen.landmarks, seen.handedness);
       tickHold(holds.pinch, !!(pinches?.left && pinches?.right), now);
-      const diode3 = !!(pinches?.left || pinches?.right || midLit(holds.pinch, now));
+      const diode3 = midLit(holds.pinch, now);
 
       const fists = fistSides(seen.landmarks, seen.handedness);
       tickHold(holds.fist, !!(fists?.left && fists?.right), now);
-      const diode4 = !!(fists?.left || fists?.right || midLit(holds.fist, now));
+      const diode4 = midLit(holds.fist, now);
 
-      // Mains ouvertes : triangle (diode 1) a la priorité.
       const opens = openSides(seen.landmarks, seen.handedness);
       const openBoth = !!(opens?.left && opens?.right);
       tickHold(holds.open, openBoth && !diode1, now);
-      const diode5 = diode1
-        ? false
-        : !!(opens?.left || opens?.right || midLit(holds.open, now));
+      const diode5 = diode1 ? false : midLit(holds.open, now);
 
       const points = pointSides(seen.landmarks, seen.handedness);
       const indexesTouch = pointedIndexesTouch(seen.landmarks);
       tickHold(holds.point, !!(points?.left && points?.right && indexesTouch), now);
-      const diode6 = !!(points?.left || points?.right || midLit(holds.point, now));
+      const diode6 = midLit(holds.point, now);
 
       return { diode1, diode2, diode3, diode4, diode5, diode6 };
     },
