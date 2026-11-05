@@ -378,7 +378,7 @@ function barBounds() {
 /** Position du logo = ancre de tout le layout (le menu ne doit pas le pousser). */
 function stackPos() {
   const bounds = barBounds();
-  return { x: bounds.x, y: bounds.y };
+  return { x: logoAnchorX(bounds), y: bounds.y };
 }
 
 function chatOriginFor(barX, barY) {
@@ -481,8 +481,13 @@ function windowsReady() {
 
 function layout(barX, barY) {
   if (!windowsReady()) return;
+  const wasExpanded = barExpanded;
+  // Ancre = position du logo (pas le x fenêtre si le bandeau màj est ouvert à gauche).
   const pos = clampBar(barX, barY);
+  barExpanded = false;
+  barStatusLeft = false;
   bar.setBounds({ x: pos.x, y: pos.y, width: barW(), height: barH() });
+  if (wasExpanded) setBarExpanded(true);
   if (chatVisible) {
     const chatO = chatOriginFor(pos.x, pos.y);
     chat.setBounds({ x: chatO.x, y: chatO.y, width: chatW(), height: liveChatH() });
@@ -496,7 +501,7 @@ function layout(barX, barY) {
 }
 
 function openChatAroundLogo() {
-  const anchor = barBounds();
+  const anchor = stackPos();
   const dir = decideOpenDir(anchor.x, anchor.y);
   openUp = dir.openUp;
   openLeft = dir.openLeft;
@@ -506,7 +511,7 @@ function openChatAroundLogo() {
 }
 
 function toggleChatWindow() {
-  const anchor = barBounds();
+  const anchor = stackPos();
   log(`toggle chatVisible=${chatVisible} linked=${menuIsLinked()} visible=${!!(chat && !chat.isDestroyed() && chat.isVisible())}`);
   // Menu non lié (fermé ou enfoncé) → un clic ouvre / remonte.
   if (chatVisible && !menuIsLinked()) {
@@ -949,11 +954,61 @@ function tellUpdateStatus() {
   bar.webContents.send('update:status', updatePayload());
 }
 
+/** Message màj à droite du logo sauf dans le quart droit de l’écran. */
+let barExpanded = false;
+let barStatusLeft = false;
+
+function statusOpensLeft(logoX, logoY) {
+  const collapsed = barW();
+  const point = {
+    x: Math.round(logoX + collapsed / 2),
+    y: Math.round(logoY + barH() / 2)
+  };
+  const area = screen.getDisplayNearestPoint(point).workArea;
+  const rel = (point.x - area.x) / Math.max(1, area.width);
+  return rel >= 0.75;
+}
+
+function logoAnchorX(bounds = barBounds()) {
+  const collapsed = barW();
+  if (barExpanded && barStatusLeft && bounds.width > collapsed + 4) {
+    return bounds.x + bounds.width - collapsed;
+  }
+  return bounds.x;
+}
+
 function setBarExpanded(on) {
   if (!bar || bar.isDestroyed()) return;
   const b = bar.getBounds();
-  const width = on ? barExpandedW() : barW();
-  bar.setBounds({ x: b.x, y: b.y, width, height: barH() });
+  const collapsed = barW();
+  const expanded = barExpandedW();
+  const logoX = logoAnchorX(b);
+  const y = b.y;
+
+  if (!on) {
+    barExpanded = false;
+    barStatusLeft = false;
+    bar.setBounds({ x: logoX, y, width: collapsed, height: barH() });
+    try {
+      bar.webContents.send('bar:status-side', 'right');
+    } catch {
+      // ignore
+    }
+    return;
+  }
+
+  barExpanded = true;
+  barStatusLeft = statusOpensLeft(logoX, y);
+  if (barStatusLeft) {
+    bar.setBounds({ x: logoX - (expanded - collapsed), y, width: expanded, height: barH() });
+  } else {
+    bar.setBounds({ x: logoX, y, width: expanded, height: barH() });
+  }
+  try {
+    bar.webContents.send('bar:status-side', barStatusLeft ? 'left' : 'right');
+  } catch {
+    // ignore
+  }
 }
 
 function applyManualUpdate() {

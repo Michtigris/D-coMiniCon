@@ -291,6 +291,13 @@ statusBtn.addEventListener('click', async (event) => {
 
 window.deco.on('update:status', renderStatus);
 
+window.deco.on('bar:status-side', (side) => {
+  const root = document.getElementById('root');
+  const left = side === 'left';
+  if (root) root.classList.toggle('status-left', left);
+  document.body.classList.toggle('status-left', left);
+});
+
 window.deco.on('badge', (info) => {
   const unread = Number(info?.unread) || 0;
   const call = !!info?.call;

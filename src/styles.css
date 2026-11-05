@@ -442,12 +442,19 @@ body[data-view="bar"] #app {
   place-items: center start;
   background: transparent;
 }
+body[data-view="bar"].status-left #app {
+  place-items: center end;
+}
 .bar-root {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 100%;
   padding: 0 8px 0 12px;
+}
+.bar-root.status-left {
+  flex-direction: row-reverse;
+  padding: 0 12px 0 8px;
 }
 .bar-logo {
   --buddy: 72px;

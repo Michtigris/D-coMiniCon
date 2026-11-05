@@ -6,7 +6,8 @@ const CHANNELS = new Set([
   'game:result',
   'chat:visible',
   'update:status',
-  'chat:refit'
+  'chat:refit',
+  'bar:status-side'
 ]);
 
 contextBridge.exposeInMainWorld('deco', {
