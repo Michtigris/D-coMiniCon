@@ -1,7 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { app, BrowserWindow, Tray, Menu, Notification, clipboard, ipcMain, screen, session, nativeImage } = require('electron');
+const { execFile } = require('child_process');
+const { app, BrowserWindow, Tray, Menu, Notification, clipboard, ipcMain, screen, session, nativeImage, shell } = require('electron');
 
 app.setName('DécoMiniCon');
 app.setAppUserModelId('fr.decominicon.app');
@@ -128,6 +129,79 @@ function log(line) {
   console.log(line);
 }
 
+const CAMERA_SHORTCUTS = new Set([
+  'ctrl+c',
+  'ctrl+v',
+  'ctrl+x',
+  'ctrl+z',
+  'ctrl+a',
+  'ctrl+s',
+  'alt+tab',
+  'win+d',
+  'win+e',
+  'win+tab',
+  'alt+f4',
+  'ctrl+win+left',
+  'ctrl+win+right'
+]);
+
+const SHORTCUT_VK = {
+  'ctrl+c': [0x11, 0x43],
+  'ctrl+v': [0x11, 0x56],
+  'ctrl+x': [0x11, 0x58],
+  'ctrl+z': [0x11, 0x5a],
+  'ctrl+a': [0x11, 0x41],
+  'ctrl+s': [0x11, 0x53],
+  'alt+tab': [0x12, 0x09],
+  'win+d': [0x5b, 0x44],
+  'win+e': [0x5b, 0x45],
+  'win+tab': [0x5b, 0x09],
+  'alt+f4': [0x12, 0x73],
+  'ctrl+win+left': [0x11, 0x5b, 0x25],
+  'ctrl+win+right': [0x11, 0x5b, 0x27]
+};
+
+function defaultDiode() {
+  return { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' };
+}
+
+function defaultCameraActions() {
+  return {
+    enabled: false,
+    diodes: {
+      1: defaultDiode(),
+      2: defaultDiode(),
+      3: defaultDiode(),
+      4: defaultDiode(),
+      5: defaultDiode(),
+      6: defaultDiode()
+    }
+  };
+}
+
+function normalizeCameraActions(raw) {
+  const base = defaultCameraActions();
+  const src = raw && typeof raw === 'object' ? raw : {};
+  base.enabled = !!src.enabled;
+  const diodes = src.diodes && typeof src.diodes === 'object' ? src.diodes : {};
+  for (let i = 1; i <= 6; i += 1) {
+    const key = String(i);
+    const d = diodes[key] && typeof diodes[key] === 'object' ? diodes[key] : {};
+    const action = ['none', 'shortcut', 'app', 'url'].includes(d.action) ? d.action : 'none';
+    const shortcut = CAMERA_SHORTCUTS.has(String(d.shortcut || '').toLowerCase())
+      ? String(d.shortcut).toLowerCase()
+      : 'ctrl+c';
+    base.diodes[key] = {
+      on: !!d.on,
+      action,
+      shortcut,
+      app: String(d.app || '').slice(0, 120),
+      url: String(d.url || '').slice(0, 500)
+    };
+  }
+  return base;
+}
+
 function defaultProfile() {
   return {
     userId: null,
@@ -147,8 +221,49 @@ function defaultProfile() {
     uiSize: 'normal',
     lastPartnerId: null,
     lastView: 'salon',
-    seen: {}
+    seen: {},
+    cameraActions: defaultCameraActions()
   };
+}
+
+function normalizeUrl(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(text)) return text;
+  return `https://${text}`;
+}
+
+function runShortcut(id) {
+  const key = String(id || '').toLowerCase();
+  const vks = SHORTCUT_VK[key];
+  if (!vks || !win32) return { ok: false, reason: 'Raccourci indisponible' };
+  return win32.sendChord(vks);
+}
+
+function openOrFocusApp(name) {
+  const query = String(name || '').trim();
+  if (!query) return Promise.resolve({ ok: false, reason: 'Nom vide' });
+  if (win32) {
+    const focused = win32.focusByTitle(query);
+    if (focused.ok) return Promise.resolve({ ok: true, focused: true, title: focused.title });
+  }
+  return new Promise((resolve) => {
+    execFile('cmd.exe', ['/c', 'start', '', query], { windowsHide: true }, (err) => {
+      if (err) resolve({ ok: false, reason: err.message || 'Ouverture impossible' });
+      else resolve({ ok: true, focused: false });
+    });
+  });
+}
+
+async function openCameraUrl(raw) {
+  const url = normalizeUrl(raw);
+  if (!url) return { ok: false, reason: 'Lien vide' };
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err.message || 'Lien impossible' };
+  }
 }
 
 function normalizeUiSize(raw) {
@@ -344,6 +459,7 @@ function loadProfile() {
   profile = { ...defaultProfile(), ...readJson(profileFile(), {}) };
   profile.openCombo = normalizeOpenCombo(profile.openCombo);
   profile.uiSize = normalizeUiSize(profile.uiSize);
+  profile.cameraActions = normalizeCameraActions(profile.cameraActions);
   chatVisible = profile.chatVisible !== false;
   applyOpenCombo(profile.openCombo);
   return profile;
@@ -366,6 +482,11 @@ function saveProfile(patch) {
     next.uiSize = normalizeUiSize(next.uiSize);
   } else {
     next.uiSize = prevSize;
+  }
+  if (Object.prototype.hasOwnProperty.call(next, 'cameraActions') || patch?.cameraActions != null) {
+    next.cameraActions = normalizeCameraActions(next.cameraActions);
+  } else {
+    next.cameraActions = normalizeCameraActions(profile?.cameraActions);
   }
   profile = next;
   applyOpenCombo(profile.openCombo);
@@ -1276,6 +1397,9 @@ function registerIpc() {
   });
   ipcMain.handle('host:info', () => hostInfo);
   ipcMain.handle('lan:candidates', () => lanCandidates());
+  ipcMain.handle('camera:shortcut', (_event, id) => runShortcut(id));
+  ipcMain.handle('camera:open-app', (_event, name) => openOrFocusApp(name));
+  ipcMain.handle('camera:open-url', (_event, url) => openCameraUrl(url));
   ipcMain.handle('clipboard:write', (_event, text) => {
     clipboard.writeText(String(text || ''));
     return true;

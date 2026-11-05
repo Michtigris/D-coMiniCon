@@ -1,8 +1,10 @@
 import { createSocket } from './net.js';
 import { createRtc } from './rtc.js';
+import { syncCameraActions } from './camera/runner.js';
 
 const app = document.getElementById('app');
 const state = {
+  settingsPage: 'main', // main | experimental | camera
   profile: null,
   host: { hosting: false, urls: [] },
   version: '',
@@ -129,29 +131,51 @@ function shell() {
       <main id="body"></main>
       <div id="toast" class="toast" hidden></div>
       <form id="settings" class="settings" hidden>
-        <div class="section">Compte</div>
-        <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
-        <p class="hint" id="pseudo-cooldown" hidden></p>
-        <p class="hint" id="settings-feedback" hidden></p>
-        <div id="server-settings" hidden>
-          <div class="section">Serveur</div>
-          <label>Adresse <input name="server" placeholder="IP:3847" /></label>
-          <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
+        <div id="settings-page-main">
+          <div class="section">Compte</div>
+          <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
+          <p class="hint" id="pseudo-cooldown" hidden></p>
+          <p class="hint" id="settings-feedback" hidden></p>
+          <div id="server-settings" hidden>
+            <div class="section">Serveur</div>
+            <label>Adresse <input name="server" placeholder="IP:3847" /></label>
+            <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
+          </div>
+          <div id="share-settings"></div>
+          <div id="open-combo-settings" hidden>
+            <div class="section">Ouverture</div>
+            <label>Mot-clé <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" /></label>
+            <p class="hint" id="combo-hint"></p>
+          </div>
+          <div id="size-settings" hidden>
+            <div class="section">Taille</div>
+            <label class="size-slider">
+              <input name="uiSize" type="range" min="0" max="3" step="1" />
+              <span id="size-label">Normale</span>
+            </label>
+          </div>
+          <button type="button" class="ghost settings-nav" id="open-experimental">Paramètres expérimentaux</button>
+          <button type="submit" class="primary">Enregistrer</button>
         </div>
-        <div id="share-settings"></div>
-        <div id="open-combo-settings" hidden>
-          <div class="section">Ouverture</div>
-          <label>Mot-clé <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" /></label>
-          <p class="hint" id="combo-hint"></p>
+        <div id="settings-page-experimental" hidden>
+          <button type="button" class="ghost settings-back" data-back="main">← Retour</button>
+          <div class="section">Paramètres expérimentaux</div>
+          <div class="camera-diode-head experimental-master">
+            <div class="camera-diode-title">Fonctions expérimentales</div>
+            <button type="button" class="power-toggle off" id="experimental-master" aria-pressed="false">
+              <span class="power-knob"></span>
+              <span class="power-label">OFF</span>
+            </button>
+          </div>
+          <p class="hint" id="experimental-master-hint">Désactivé : aucune détection caméra.</p>
+          <button type="button" class="ghost settings-nav" id="open-camera-actions">Action caméra</button>
         </div>
-        <div id="size-settings" hidden>
-          <div class="section">Taille</div>
-          <label class="size-slider">
-            <input name="uiSize" type="range" min="0" max="3" step="1" />
-            <span id="size-label">Normale</span>
-          </label>
+        <div id="settings-page-camera" hidden>
+          <button type="button" class="ghost settings-back" data-back="experimental">← Retour</button>
+          <div class="section">Action caméra</div>
+          <p class="hint">Caméra seule (pas de micro). Active un déclencheur puis choisis l’action.</p>
+          <div id="camera-diodes" class="camera-diodes"></div>
         </div>
-        <button type="submit" class="primary">Enregistrer</button>
       </form>
     </div>
   `;
@@ -1552,10 +1576,227 @@ async function applyLink(payload, { quiet = false } = {}) {
 function forceCloseSettings() {
   const form = document.getElementById('settings');
   if (form) form.hidden = true;
+  state.settingsPage = 'main';
+  showSettingsPage('main');
   const tip = document.getElementById('settings-feedback');
   if (tip) {
     tip.hidden = true;
     tip.textContent = '';
+  }
+}
+
+const CAMERA_DIODES = [
+  { id: 1, name: 'Triangle' },
+  { id: 2, name: 'Réflexion' },
+  { id: 3, name: 'Pincé' },
+  { id: 4, name: 'Points' },
+  { id: 5, name: 'Mains en l’air' },
+  { id: 6, name: 'UWU' }
+];
+
+const CAMERA_SHORTCUTS = [
+  { id: 'ctrl+c', label: 'Ctrl + C' },
+  { id: 'ctrl+v', label: 'Ctrl + V' },
+  { id: 'ctrl+x', label: 'Ctrl + X' },
+  { id: 'ctrl+z', label: 'Ctrl + Z' },
+  { id: 'ctrl+a', label: 'Ctrl + A' },
+  { id: 'ctrl+s', label: 'Ctrl + S' },
+  { id: 'alt+tab', label: 'Alt + Tab' },
+  { id: 'win+d', label: 'Win + D' },
+  { id: 'win+e', label: 'Win + E' },
+  { id: 'win+tab', label: 'Win + Tab' },
+  { id: 'alt+f4', label: 'Alt + F4' },
+  { id: 'ctrl+win+left', label: 'Ctrl + Windows + ←' },
+  { id: 'ctrl+win+right', label: 'Ctrl + Windows + →' }
+];
+
+function cameraConfig() {
+  const base = {
+    enabled: false,
+    diodes: {
+      1: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
+      2: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
+      3: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
+      4: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
+      5: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
+      6: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' }
+    }
+  };
+  const src = state.profile?.cameraActions;
+  if (!src || typeof src !== 'object') return base;
+  base.enabled = !!src.enabled;
+  if (!src.diodes) return base;
+  for (let i = 1; i <= 6; i += 1) {
+    const key = String(i);
+    const d = src.diodes[key];
+    if (!d || typeof d !== 'object') continue;
+    base.diodes[key] = {
+      on: !!d.on,
+      action: ['none', 'shortcut', 'app', 'url'].includes(d.action) ? d.action : 'none',
+      shortcut: d.shortcut || 'ctrl+c',
+      app: d.app || '',
+      url: d.url || ''
+    };
+  }
+  return base;
+}
+
+function setPowerToggle(btn, on) {
+  if (!btn) return;
+  btn.classList.toggle('on', on);
+  btn.classList.toggle('off', !on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  const label = btn.querySelector('.power-label');
+  if (label) label.textContent = on ? 'ON' : 'OFF';
+}
+
+function syncExperimentalMasterUi() {
+  const cfg = cameraConfig();
+  const btn = document.getElementById('experimental-master');
+  setPowerToggle(btn, cfg.enabled);
+  const hint = document.getElementById('experimental-master-hint');
+  if (hint) {
+    hint.textContent = cfg.enabled
+      ? 'Activé : Action caméra peut utiliser la webcam (sans micro).'
+      : 'Désactivé : aucune détection caméra.';
+  }
+}
+
+function showSettingsPage(page) {
+  state.settingsPage = page;
+  const main = document.getElementById('settings-page-main');
+  const experimental = document.getElementById('settings-page-experimental');
+  const camera = document.getElementById('settings-page-camera');
+  if (main) main.hidden = page !== 'main';
+  if (experimental) experimental.hidden = page !== 'experimental';
+  if (camera) camera.hidden = page !== 'camera';
+  const form = document.getElementById('settings');
+  if (form?.pseudo) form.pseudo.required = page === 'main';
+  if (page === 'experimental') syncExperimentalMasterUi();
+  if (page === 'camera') renderCameraDiodes();
+  fitChatWindow();
+}
+
+function bindSettingsNav() {
+  const openExp = document.getElementById('open-experimental');
+  if (openExp) {
+    openExp.onclick = () => showSettingsPage('experimental');
+  }
+  const openCam = document.getElementById('open-camera-actions');
+  if (openCam) {
+    openCam.onclick = () => showSettingsPage('camera');
+  }
+  document.querySelectorAll('.settings-back').forEach((btn) => {
+    btn.onclick = () => showSettingsPage(btn.dataset.back || 'main');
+  });
+  const master = document.getElementById('experimental-master');
+  if (master) {
+    master.onclick = async () => {
+      const next = cameraConfig();
+      next.enabled = !next.enabled;
+      state.profile = await window.deco.saveProfile({ cameraActions: next });
+      syncCameraActions(state.profile.cameraActions);
+      syncExperimentalMasterUi();
+    };
+  }
+}
+
+async function patchCameraDiode(id, patch) {
+  const next = cameraConfig();
+  const key = String(id);
+  next.diodes[key] = { ...next.diodes[key], ...patch };
+  state.profile = await window.deco.saveProfile({ cameraActions: next });
+  syncCameraActions(state.profile.cameraActions);
+}
+
+function renderCameraDiodes() {
+  const root = document.getElementById('camera-diodes');
+  if (!root) return;
+  const cfg = cameraConfig();
+  root.replaceChildren();
+  for (const meta of CAMERA_DIODES) {
+    const diode = cfg.diodes[String(meta.id)];
+    const row = document.createElement('div');
+    row.className = 'camera-diode';
+    row.dataset.id = String(meta.id);
+
+    const head = document.createElement('div');
+    head.className = 'camera-diode-head';
+
+    const title = document.createElement('div');
+    title.className = 'camera-diode-title';
+    title.textContent = `Déclencheur ${meta.id} · ${meta.name}`;
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = `power-toggle ${diode.on ? 'on' : 'off'}`;
+    toggle.setAttribute('aria-pressed', diode.on ? 'true' : 'false');
+    toggle.innerHTML = `<span class="power-knob"></span><span class="power-label">${diode.on ? 'ON' : 'OFF'}</span>`;
+    toggle.onclick = async () => {
+      await patchCameraDiode(meta.id, { on: !diode.on });
+      renderCameraDiodes();
+    };
+
+    head.append(title, toggle);
+
+    const action = document.createElement('select');
+    action.className = 'camera-action';
+    for (const opt of [
+      { value: 'none', label: 'Rien' },
+      { value: 'shortcut', label: 'Exécuter un raccourci' },
+      { value: 'app', label: 'Ouvrir une application' },
+      { value: 'url', label: 'Ouvrir une page' }
+    ]) {
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (opt.value === diode.action) o.selected = true;
+      action.append(o);
+    }
+    action.onchange = async () => {
+      await patchCameraDiode(meta.id, { action: action.value });
+      renderCameraDiodes();
+    };
+
+    row.append(head, action);
+
+    if (diode.action === 'shortcut') {
+      const shortcuts = document.createElement('select');
+      shortcuts.className = 'camera-detail';
+      for (const opt of CAMERA_SHORTCUTS) {
+        const o = document.createElement('option');
+        o.value = opt.id;
+        o.textContent = opt.label;
+        if (opt.id === diode.shortcut) o.selected = true;
+        shortcuts.append(o);
+      }
+      shortcuts.onchange = async () => {
+        await patchCameraDiode(meta.id, { shortcut: shortcuts.value });
+      };
+      row.append(shortcuts);
+    } else if (diode.action === 'app') {
+      const input = document.createElement('input');
+      input.className = 'camera-detail';
+      input.type = 'text';
+      input.placeholder = 'Nom de l’appli (ex. notepad, chrome)';
+      input.value = diode.app || '';
+      input.onchange = async () => {
+        await patchCameraDiode(meta.id, { app: input.value.trim() });
+      };
+      row.append(input);
+    } else if (diode.action === 'url') {
+      const input = document.createElement('input');
+      input.className = 'camera-detail';
+      input.type = 'url';
+      input.placeholder = 'https://…';
+      input.value = diode.url || '';
+      input.onchange = async () => {
+        await patchCameraDiode(meta.id, { url: input.value.trim() });
+      };
+      row.append(input);
+    }
+
+    root.append(row);
   }
 }
 
@@ -1620,6 +1861,8 @@ function openSettings() {
     return;
   }
   form.hidden = false;
+  showSettingsPage('main');
+  bindSettingsNav();
   form.pseudo.value = state.profile.pseudo || '';
   form.openCombo.value = state.profile.openCombo || 'ANGE';
   setSettingsFeedback('');
@@ -1715,6 +1958,7 @@ function closeSettings() {
 
 async function saveSettings(event) {
   event.preventDefault();
+  if (state.settingsPage !== 'main') return;
   const form = event.currentTarget;
   const currentName = String(state.profile?.pseudo || '');
   const name = form.pseudo.value.trim().replace(/\s+/g, ' ');
@@ -1771,6 +2015,7 @@ async function init() {
   state.host = await window.deco.hostInfo();
   state.version = await window.deco.version();
   shell();
+  syncCameraActions(state.profile?.cameraActions);
   window.deco.on('notify:click', () => {
     state.browsing = false;
     renderBody();

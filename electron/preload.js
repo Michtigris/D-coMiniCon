@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('deco', {
   hostInfo: () => ipcRenderer.invoke('host:info'),
   lanCandidates: () => ipcRenderer.invoke('lan:candidates'),
   copy: (text) => ipcRenderer.invoke('clipboard:write', text),
+  cameraShortcut: (id) => ipcRenderer.invoke('camera:shortcut', id),
+  cameraOpenApp: (name) => ipcRenderer.invoke('camera:open-app', name),
+  cameraOpenUrl: (url) => ipcRenderer.invoke('camera:open-url', url),
   on: (channel, callback) => {
     if (!CHANNELS.has(channel)) return () => {};
     const listener = (_event, data) => callback(data);

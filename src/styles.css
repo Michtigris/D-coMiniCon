@@ -553,6 +553,95 @@ input:focus {
   color: var(--cyan);
   font-size: 13px;
 }
+.settings-nav,
+.settings-back {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+.experimental-master {
+  margin: 4px 0 2px;
+}
+.camera-diodes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.camera-diode {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.camera-diode:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.camera-diode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.camera-diode-title {
+  font-family: Fredoka, sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+.camera-action,
+.camera-detail {
+  width: 100%;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: #fff;
+  color: var(--text);
+}
+.power-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 68px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid #c8c8c8;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: background 0.18s ease;
+}
+.power-toggle.on {
+  background: linear-gradient(180deg, #1f9d3a 0%, #5dff6a 100%);
+}
+.power-toggle.off {
+  background: linear-gradient(180deg, #8b1520 0%, #ff2a2a 100%);
+}
+.power-toggle .power-knob {
+  position: absolute;
+  top: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f7f7f7 0%, #cfcfcf 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: left 0.18s ease;
+}
+.power-toggle.on .power-knob { left: 40px; }
+.power-toggle.off .power-knob { left: 2px; }
+.power-toggle .power-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: Fredoka, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+.power-toggle.on .power-label { left: 8px; }
+.power-toggle.off .power-label { right: 7px; }
 
 body[data-view="bar"] {
   background: transparent;
