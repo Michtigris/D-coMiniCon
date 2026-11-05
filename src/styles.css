@@ -278,6 +278,34 @@ button:focus-visible,
   gap: 6px;
 }
 .setup { overflow: auto; gap: 8px; }
+.setup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.setup-row {
+  display: flex;
+  gap: 6px;
+}
+.setup-row > .primary,
+.setup-row > .ghost {
+  flex: 1;
+}
+.setup-links {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+.linkish {
+  border: 0;
+  background: transparent;
+  color: var(--cyan);
+  font: 700 11px/1.2 Nunito, "Segoe UI", sans-serif;
+  padding: 2px 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linkish:hover { color: var(--magenta); }
 .intro, .hint, .empty, .error { margin: 0; color: var(--muted); font-size: 11px; }
 .error { color: var(--red); min-height: 1em; }
 label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }

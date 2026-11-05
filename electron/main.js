@@ -132,6 +132,7 @@ function defaultProfile() {
     userId: null,
     token: null,
     pseudo: '',
+    email: '',
     serverUrl: 'http://127.0.0.1:3847',
     roomCode: '',
     hosting: false,
@@ -352,6 +353,7 @@ function saveProfile(patch) {
   if (!next.userId && profile.userId) next.userId = profile.userId;
   if (!next.token && profile.token) next.token = profile.token;
   if (!next.pseudo && profile.pseudo) next.pseudo = profile.pseudo;
+  if (!next.email && profile.email) next.email = profile.email;
   if (Object.prototype.hasOwnProperty.call(next, 'openCombo') || patch?.openCombo != null) {
     next.openCombo = normalizeOpenCombo(next.openCombo);
   } else if (!next.openCombo) {

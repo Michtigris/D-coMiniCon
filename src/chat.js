@@ -9,6 +9,7 @@ const state = {
   status: 'boot',
   forceSetup: false,
   setupError: '',
+  setupMode: 'login', // login | register | forgot
   me: null,
   users: [],
   friends: [],
@@ -352,6 +353,22 @@ function isInSalon() {
   return !!(state.me && !state.forceSetup);
 }
 
+function normalizeEmail(input) {
+  const email = String(input || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 120) {
+    throw new Error('Adresse mail invalide.');
+  }
+  return email;
+}
+
+function requireNewPassword(password) {
+  const value = String(password || '');
+  if (value.length < 8 || value.length > 64) {
+    throw new Error('Le mot de passe doit faire au moins 8 caractères.');
+  }
+  return value;
+}
+
 function mountSetup() {
   const body = document.getElementById('body');
   const form = document.createElement('form');
@@ -361,20 +378,100 @@ function mountSetup() {
   forceCloseSettings();
 
   if (!hasAccount) {
+    const mode = state.setupMode === 'register' || state.setupMode === 'forgot' ? state.setupMode : 'login';
+    state.setupMode = mode;
+    if (mode === 'register') {
+      form.innerHTML = `
+        <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
+        <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="XXXXXX" autocomplete="new-password" /></label>
+        <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Pseudo" autocomplete="nickname" /></label>
+        <p class="error" id="setup-error"></p>
+        <div class="setup-actions">
+          <button type="submit" class="primary">Créer le compte</button>
+          <button type="button" class="ghost" id="back-login">Déjà un compte</button>
+        </div>
+      `;
+      body.replaceChildren(form);
+      form.querySelector('#setup-error').textContent = state.setupError || '';
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        createAccount({
+          email: form.email.value,
+          password: form.password.value,
+          pseudo: form.pseudo.value
+        });
+      };
+      form.querySelector('#back-login').onclick = () => {
+        state.setupError = '';
+        state.setupMode = 'login';
+        mountSetup();
+      };
+      fitChatWindow();
+      return;
+    }
+    if (mode === 'forgot') {
+      form.innerHTML = `
+        <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
+        <label>Nouveau mot de passe <input name="password" type="password" maxlength="64" required placeholder="XXXXXX" autocomplete="new-password" /></label>
+        <p class="hint">Réinitialise le compte enregistré sur ce PC.</p>
+        <p class="error" id="setup-error"></p>
+        <div class="setup-actions">
+          <button type="submit" class="primary">Réinitialiser</button>
+          <button type="button" class="ghost" id="back-login">Retour</button>
+        </div>
+      `;
+      body.replaceChildren(form);
+      if (state.profile?.email) form.email.value = state.profile.email;
+      form.querySelector('#setup-error').textContent = state.setupError || '';
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        resetLocalPassword({
+          email: form.email.value,
+          password: form.password.value
+        });
+      };
+      form.querySelector('#back-login').onclick = () => {
+        state.setupError = '';
+        state.setupMode = 'login';
+        mountSetup();
+      };
+      fitChatWindow();
+      return;
+    }
+
     form.innerHTML = `
-      <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Pseudo" autocomplete="username" /></label>
-      <label>Mdp <input name="password" type="password" maxlength="64" required placeholder="Mot de passe" autocomplete="new-password" /></label>
+      <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
+      <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="XXXXXX" autocomplete="current-password" /></label>
+      <div class="setup-links">
+        <button type="button" class="linkish" id="forgot-password">Mot de passe oublié</button>
+      </div>
       <p class="error" id="setup-error"></p>
-      <button type="submit" class="primary">OK</button>
+      <div class="setup-actions">
+        <div class="setup-row">
+          <button type="submit" class="primary">OK</button>
+          <button type="button" class="ghost" id="go-register">Créer</button>
+        </div>
+      </div>
     `;
     body.replaceChildren(form);
+    if (state.profile?.email) form.email.value = state.profile.email;
     form.querySelector('#setup-error').textContent = state.setupError || '';
     form.onsubmit = (event) => {
       event.preventDefault();
-      createAccount({
-        pseudo: form.pseudo.value,
+      loginAccount({
+        email: form.email.value,
         password: form.password.value
       });
+    };
+    form.querySelector('#go-register').onclick = () => {
+      state.setupError = '';
+      state.setupMode = 'register';
+      mountSetup();
+    };
+    form.querySelector('#forgot-password').onclick = () => {
+      state.setupError = '';
+      state.setupMode = 'forgot';
+      mountSetup();
     };
     fitChatWindow();
     return;
@@ -403,18 +500,31 @@ function mountSetup() {
   fitChatWindow();
 }
 
-async function createAccount({ pseudo, password }) {
-  const name = pseudo.trim().replace(/\s+/g, ' ');
+async function createAccount({ email, password, pseudo }) {
+  let mail;
+  let pwd;
+  try {
+    mail = normalizeEmail(email);
+    pwd = requireNewPassword(password);
+  } catch (err) {
+    state.setupError = err?.message || 'Informations invalides.';
+    state.setupMode = 'register';
+    mountSetup();
+    return;
+  }
+  const name = String(pseudo || '').trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
     state.setupError = 'Le pseudo doit faire au moins 2 caractères.';
+    state.setupMode = 'register';
     mountSetup();
     return;
   }
   let token;
   try {
-    token = await window.deco.hashPassword(name, password);
+    token = await window.deco.hashPassword(name, pwd);
   } catch (err) {
-    state.setupError = err?.message || 'Mot de passe invalide (4 caractères minimum).';
+    state.setupError = err?.message || 'Mot de passe invalide.';
+    state.setupMode = 'register';
     mountSetup();
     return;
   }
@@ -422,11 +532,104 @@ async function createAccount({ pseudo, password }) {
     userId: state.profile.userId || crypto.randomUUID(),
     token,
     pseudo: name,
+    email: mail,
     settingsOpen: false
   });
   state.setupError = '';
+  state.setupMode = 'login';
   state.forceSetup = true;
-  toast('Compte OK');
+  toast('Compte créé');
+  mountSetup();
+}
+
+async function loginAccount({ email, password }) {
+  let mail;
+  try {
+    mail = normalizeEmail(email);
+  } catch (err) {
+    state.setupError = err?.message || 'Adresse mail invalide.';
+    state.setupMode = 'login';
+    mountSetup();
+    return;
+  }
+  const profile = state.profile;
+  if (!profile?.userId || !profile?.token || !profile?.pseudo) {
+    state.setupError = 'Aucun compte sur ce PC. Appuie sur Créer.';
+    state.setupMode = 'login';
+    mountSetup();
+    return;
+  }
+  if (profile.email && profile.email.toLowerCase() !== mail) {
+    state.setupError = 'Cette adresse ne correspond pas au compte de ce PC.';
+    state.setupMode = 'login';
+    mountSetup();
+    return;
+  }
+  let token;
+  try {
+    token = await window.deco.hashPassword(profile.pseudo, password);
+  } catch (err) {
+    state.setupError = err?.message || 'Mot de passe incorrect.';
+    state.setupMode = 'login';
+    mountSetup();
+    return;
+  }
+  if (token !== profile.token) {
+    state.setupError = 'Mot de passe incorrect.';
+    state.setupMode = 'login';
+    mountSetup();
+    return;
+  }
+  state.profile = await window.deco.saveProfile({ email: mail, settingsOpen: false });
+  state.setupError = '';
+  state.setupMode = 'login';
+  state.forceSetup = true;
+  toast('Connecté');
+  mountSetup();
+}
+
+async function resetLocalPassword({ email, password }) {
+  let mail;
+  let pwd;
+  try {
+    mail = normalizeEmail(email);
+    pwd = requireNewPassword(password);
+  } catch (err) {
+    state.setupError = err?.message || 'Informations invalides.';
+    state.setupMode = 'forgot';
+    mountSetup();
+    return;
+  }
+  const profile = state.profile;
+  if (!profile?.userId || !profile?.pseudo || !profile?.token) {
+    state.setupError = 'Aucun compte local à réinitialiser. Crée un compte.';
+    state.setupMode = 'forgot';
+    mountSetup();
+    return;
+  }
+  if (profile.email && profile.email.toLowerCase() !== mail) {
+    state.setupError = 'Adresse incorrecte pour ce PC.';
+    state.setupMode = 'forgot';
+    mountSetup();
+    return;
+  }
+  let token;
+  try {
+    token = await window.deco.hashPassword(profile.pseudo, pwd);
+  } catch (err) {
+    state.setupError = err?.message || 'Mot de passe invalide.';
+    state.setupMode = 'forgot';
+    mountSetup();
+    return;
+  }
+  state.profile = await window.deco.saveProfile({
+    email: mail,
+    token,
+    settingsOpen: false
+  });
+  state.setupError = '';
+  state.setupMode = 'login';
+  toast('Mot de passe mis à jour');
   mountSetup();
 }
 
@@ -1251,9 +1454,10 @@ async function saveSettings(event) {
   };
   if (form.password.value) {
     try {
+      requireNewPassword(form.password.value);
       patch.token = await window.deco.hashPassword(name, form.password.value);
     } catch (err) {
-      const msg = err?.message || 'Mot de passe invalide (4 caractères min).';
+      const msg = err?.message || 'Mot de passe invalide (8 caractères min).';
       setSettingsFeedback(msg, true);
       toast(msg);
       return;
