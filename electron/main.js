@@ -260,17 +260,22 @@ function openOrFocusApp(name) {
 async function openCameraUrl(raw) {
   const url = normalizeUrl(raw);
   if (!url) return { ok: false, reason: 'Lien vide' };
-  try {
-    const { openOrFocusUrl } = require('./browserUrl');
-    return await openOrFocusUrl(url, (target) => shell.openExternal(target));
-  } catch (err) {
-    try {
-      await shell.openExternal(url);
-      return { ok: true, opened: true };
-    } catch (err2) {
-      return { ok: false, reason: err2.message || err.message || 'Lien impossible' };
-    }
-  }
+  // Ouvre toujours un nouvel onglet / fenêtre via le navigateur par défaut, au premier plan.
+  // (plus de scan d’onglets Chrome / VS Code — trop fragile et invasif)
+  return new Promise((resolve) => {
+    execFile('cmd.exe', ['/c', 'start', '', url], { windowsHide: true }, async (err) => {
+      if (err) {
+        try {
+          await shell.openExternal(url);
+          resolve({ ok: true, opened: true });
+        } catch (err2) {
+          resolve({ ok: false, reason: err2.message || err.message || 'Lien impossible' });
+        }
+        return;
+      }
+      resolve({ ok: true, opened: true });
+    });
+  });
 }
 
 function normalizeUiSize(raw) {
