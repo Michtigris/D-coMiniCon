@@ -127,6 +127,9 @@ function renderStatus(info) {
     hideStatusTimer = setTimeout(hideStatus, 3200);
   } else if (updateInfo.status === 'error') {
     hideStatusTimer = setTimeout(hideStatus, 4200);
+  } else if (updateInfo.status === 'available') {
+    // Dispo sans clic → se range tout seul
+    hideStatusTimer = setTimeout(hideStatus, 10_000);
   }
 }
 
