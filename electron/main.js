@@ -18,7 +18,8 @@ const BASE_W = 280;
 const BASE_CHAT_H = 340;
 const BASE_BAR = 96;
 const BASE_BAR_EXPANDED = 240;
-const UI_SIZE_SCALES = { small: 0.5, medium: 0.75, normal: 1, large: 1.5 };
+/** Échelles UI : fenêtre = BASE×z, rendu via CSS transform (pas setZoomFactor). */
+const UI_SIZE_SCALES = { small: 0.7, medium: 0.85, normal: 1, large: 1.25 };
 const UI_SIZE_ORDER = ['small', 'medium', 'normal', 'large'];
 const { start, stop } = require('../server/index');
 
@@ -292,7 +293,7 @@ function liveChatH() {
   return Math.min(max, Math.max(min, chatFitH));
 }
 
-/** cssHeight : hauteur CSS du contenu ; ≥ 1e8 ou invalide → max. */
+/** cssHeight : hauteur visuelle déjà scalée ; ≥ 1e8 ou invalide → max. */
 function setChatFit(cssHeight) {
   const z = uiScale();
   const max = chatH();
@@ -300,7 +301,7 @@ function setChatFit(cssHeight) {
   const raw = Number(cssHeight);
   const next = !Number.isFinite(raw) || raw >= 1e8
     ? max
-    : Math.round(Math.min(max, Math.max(min, raw * z)));
+    : Math.round(Math.min(max, Math.max(min, raw)));
   if (chatFitH === next) return;
   chatFitH = next;
   if (windowsReady()) {
@@ -321,19 +322,23 @@ function barExpandedW() {
   return Math.round(BASE_BAR_EXPANDED * uiScale());
 }
 
-function applyUiScale() {
+function pushUiScale() {
   const z = uiScale();
+  try {
+    if (chat && !chat.isDestroyed()) chat.webContents.send('ui:scale', z);
+  } catch {
+    // ignore
+  }
+  try {
+    if (bar && !bar.isDestroyed()) bar.webContents.send('ui:scale', z);
+  } catch {
+    // ignore
+  }
+}
+
+function applyUiScale() {
   chatFitH = null;
-  try {
-    if (chat && !chat.isDestroyed()) chat.webContents.setZoomFactor(z);
-  } catch {
-    // ignore
-  }
-  try {
-    if (bar && !bar.isDestroyed()) bar.webContents.setZoomFactor(z);
-  } catch {
-    // ignore
-  }
+  pushUiScale();
   if (windowsReady()) {
     const pos = stackPos();
     layout(pos.x, pos.y);
@@ -949,8 +954,7 @@ function createWindows() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
-      autoplayPolicy: 'no-user-gesture-required',
-      zoomFactor: uiScale()
+      autoplayPolicy: 'no-user-gesture-required'
     }
   };
   // Chat opaque : les fenêtres transparentes Electron passent les clics (intouchables).
@@ -1003,7 +1007,9 @@ function createWindows() {
     applyUiScale();
     tellBar();
   });
-  chat.webContents.on('did-finish-load', () => applyUiScale());
+  chat.webContents.on('did-finish-load', () => {
+    applyUiScale();
+  });
 
   // Pas de sink au blur : défocus (clic ailleurs) ne doit pas fermer / enfoncer le panneau.
   chat.on('close', (event) => {

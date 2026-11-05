@@ -7,6 +7,7 @@ const CHANNELS = new Set([
   'chat:visible',
   'update:status',
   'chat:refit',
+  'ui:scale',
   'bar:status-side'
 ]);
 

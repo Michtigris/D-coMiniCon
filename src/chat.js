@@ -77,14 +77,22 @@ function currentView() {
   return 'salon';
 }
 
+function feedbackText(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') return value;
+  if (typeof value?.message === 'string' && value.message) return value.message;
+  return '';
+}
+
 function toast(text) {
-  state.toast = text;
+  const msg = feedbackText(text);
+  state.toast = msg;
   const el = document.getElementById('toast');
   if (!el) return;
-  el.hidden = !text;
-  el.textContent = text;
+  el.hidden = !msg;
+  el.textContent = msg;
   clearTimeout(toastTimer);
-  if (text) toastTimer = setTimeout(() => toast(''), 2600);
+  if (msg) toastTimer = setTimeout(() => toast(''), 2600);
 }
 
 function pushBadge() {
@@ -131,49 +139,49 @@ function shell() {
       <main id="body"></main>
       <div id="toast" class="toast" hidden></div>
       <form id="settings" class="settings" hidden>
-        <div id="settings-page-main">
-          <div class="section">Compte</div>
-          <label>Pseudo <input name="pseudo" maxlength="16" required autocomplete="username" /></label>
-          <p class="hint" id="pseudo-cooldown" hidden></p>
-          <p class="hint" id="settings-feedback" hidden></p>
+        <div id="settings-page-main" class="settings-stack">
+          <label class="field">Pseudo
+            <input name="pseudo" maxlength="16" required autocomplete="username" />
+          </label>
+          <p class="hint is-error" id="pseudo-cooldown" hidden></p>
+          <p class="hint is-error" id="settings-feedback" hidden></p>
           <div id="server-settings" hidden>
-            <div class="section">Serveur</div>
-            <label>Adresse <input name="server" placeholder="IP:3847" /></label>
-            <label>Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
+            <label class="field">Adresse <input name="server" placeholder="IP:3847" /></label>
+            <label class="field">Code <input name="code" maxlength="24" placeholder="Optionnel" /></label>
           </div>
-          <div id="share-settings"></div>
+          <div id="share-settings" hidden></div>
           <div id="open-combo-settings" hidden>
-            <div class="section">Ouverture</div>
-            <label>Mot-clé <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" /></label>
-            <p class="hint" id="combo-hint"></p>
-          </div>
-          <div id="size-settings" hidden>
-            <div class="section">Taille</div>
-            <label class="size-slider">
-              <input name="uiSize" type="range" min="0" max="3" step="1" />
-              <span id="size-label">Normale</span>
+            <label class="field">Mot-clé
+              <input name="openCombo" maxlength="16" placeholder="ANGE" autocomplete="off" spellcheck="false" />
             </label>
           </div>
-          <button type="button" class="ghost settings-nav" id="open-experimental">Paramètres expérimentaux</button>
+          <div id="size-settings" hidden>
+            <label class="field size-slider">Taille
+              <input name="uiSize" type="range" min="0" max="3" step="1" />
+              <span class="size-marks" id="size-marks" aria-hidden="true">
+                <span data-size="small">S</span>
+                <span data-size="medium">M</span>
+                <span data-size="normal">L</span>
+                <span data-size="large">XL</span>
+              </span>
+            </label>
+          </div>
+          <button type="button" class="settings-link" id="open-experimental">Expérimental</button>
           <button type="submit" class="primary">Enregistrer</button>
         </div>
-        <div id="settings-page-experimental" hidden>
-          <button type="button" class="ghost settings-back" data-back="main">← Retour</button>
-          <div class="section">Paramètres expérimentaux</div>
+        <div id="settings-page-experimental" class="settings-stack" hidden>
+          <button type="button" class="settings-back" data-back="main">← Retour</button>
           <div class="camera-diode-head experimental-master">
-            <div class="camera-diode-title">Fonctions expérimentales</div>
+            <div class="camera-diode-title">Expérimental</div>
             <button type="button" class="power-toggle off" id="experimental-master" aria-pressed="false">
               <span class="power-knob"></span>
               <span class="power-label">OFF</span>
             </button>
           </div>
-          <p class="hint" id="experimental-master-hint">Désactivé : aucune détection caméra.</p>
-          <button type="button" class="ghost settings-nav" id="open-camera-actions">Action caméra</button>
+          <button type="button" class="settings-link" id="open-camera-actions">Action caméra</button>
         </div>
-        <div id="settings-page-camera" hidden>
-          <button type="button" class="ghost settings-back" data-back="experimental">← Retour</button>
-          <div class="section">Action caméra</div>
-          <p class="hint">Caméra seule (pas de micro). Active un déclencheur puis choisis l’action.</p>
+        <div id="settings-page-camera" class="settings-stack" hidden>
+          <button type="button" class="settings-back" data-back="experimental">← Retour</button>
           <div id="camera-diodes" class="camera-diodes"></div>
         </div>
       </form>
@@ -1654,12 +1662,6 @@ function syncExperimentalMasterUi() {
   const cfg = cameraConfig();
   const btn = document.getElementById('experimental-master');
   setPowerToggle(btn, cfg.enabled);
-  const hint = document.getElementById('experimental-master-hint');
-  if (hint) {
-    hint.textContent = cfg.enabled
-      ? 'Activé : Action caméra peut utiliser la webcam (sans micro).'
-      : 'Désactivé : aucune détection caméra.';
-  }
 }
 
 function showSettingsPage(page) {
@@ -1725,7 +1727,7 @@ function renderCameraDiodes() {
 
     const title = document.createElement('div');
     title.className = 'camera-diode-title';
-    title.textContent = `Déclencheur ${meta.id} · ${meta.name}`;
+    title.textContent = `${meta.id}. ${meta.name}`;
 
     const toggle = document.createElement('button');
     toggle.type = 'button';
@@ -1802,16 +1804,14 @@ function renderCameraDiodes() {
 
 function setSettingsFeedback(text, isError = false) {
   const tip = document.getElementById('settings-feedback');
-  const msg = text == null || text === ''
-    ? ''
-    : (typeof text === 'string' ? text : (text?.message || String(text)));
+  const msg = feedbackText(text);
   if (!tip) {
     if (msg) toast(msg);
     return;
   }
   tip.hidden = !msg;
   tip.textContent = msg;
-  tip.style.color = isError ? 'var(--red)' : 'var(--cyan)';
+  tip.classList.toggle('is-error', !!isError);
 }
 
 const PSEUDO_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1838,17 +1838,15 @@ function syncPseudoCooldownUi(form) {
   const locked = left > 0;
   if (input) {
     input.disabled = locked;
-    input.title = locked
-      ? `Prochain changement possible dans ${formatCooldown(left)}`
-      : '';
+    input.title = locked ? `Dispo dans ${formatCooldown(left)}` : '1 semaine entre chaque changement';
   }
   if (!tip) return;
   if (locked) {
     tip.hidden = false;
-    tip.textContent = `Pseudo modifiable dans ${formatCooldown(left)} (1 semaine entre chaque changement).`;
+    tip.textContent = `Verrouillé ${formatCooldown(left)}`;
   } else {
-    tip.hidden = false;
-    tip.textContent = '1 semaine d’attente après création ou changement de pseudo.';
+    tip.hidden = true;
+    tip.textContent = '';
   }
 }
 
@@ -1874,20 +1872,11 @@ function openSettings() {
   if (comboBlock) comboBlock.hidden = false;
   if (sizeBlock) sizeBlock.hidden = false;
   if (form.server) form.server.required = false;
-  updateComboHint(form.openCombo.value);
-  form.openCombo.oninput = () => updateComboHint(form.openCombo.value);
   bindSizeSlider(form);
   const share = document.getElementById('share-settings');
   if (share) {
     share.replaceChildren();
-    const roomCode = state.host?.roomCode || state.profile?.roomCode || '';
-    const roomName = state.host?.roomName || state.profile?.roomName || '';
-    if (roomName || roomCode) {
-      const p = document.createElement('p');
-      p.className = 'hint';
-      p.textContent = [roomName, roomCode].filter(Boolean).join(' · ');
-      share.append(p);
-    }
+    share.hidden = true;
   }
   window.deco.saveProfile({ settingsOpen: true }).then((profile) => {
     state.profile = profile;
@@ -1895,22 +1884,7 @@ function openSettings() {
   fitChatWindow();
 }
 
-function updateComboHint(raw) {
-  const el = document.getElementById('combo-hint');
-  if (!el) return;
-  const word = String(raw || 'ANGE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'ANGE';
-  const n = Math.max(2, Math.min(16, word.length));
-  const win = (0.5 + 0.4 * n).toFixed(1).replace('.', ',');
-  el.textContent = `${word} · ${win}s`;
-}
-
 const UI_SIZE_ORDER = ['small', 'medium', 'normal', 'large'];
-const UI_SIZE_LABELS = {
-  small: 'Petite (0,5×)',
-  medium: 'Moyenne (0,75×)',
-  normal: 'Normale',
-  large: 'Grande (1,5×)'
-};
 
 function uiSizeFromIndex(index) {
   return UI_SIZE_ORDER[Math.max(0, Math.min(3, Number(index) || 0))] || 'normal';
@@ -1921,9 +1895,12 @@ function uiSizeIndex(size) {
   return i >= 0 ? i : 2;
 }
 
-function updateSizeLabel(size) {
-  const el = document.getElementById('size-label');
-  if (el) el.textContent = UI_SIZE_LABELS[size] || UI_SIZE_LABELS.normal;
+function updateSizeMarks(size) {
+  const root = document.getElementById('size-marks');
+  if (!root) return;
+  root.querySelectorAll('[data-size]').forEach((el) => {
+    el.classList.toggle('on', el.dataset.size === size);
+  });
 }
 
 function bindSizeSlider(form) {
@@ -1931,17 +1908,17 @@ function bindSizeSlider(form) {
   if (!slider) return;
   const current = state.profile.uiSize || 'normal';
   slider.value = String(uiSizeIndex(current));
-  updateSizeLabel(current);
-  // Aperçu du libellé pendant le drag ; applique la taille au relâchement.
+  updateSizeMarks(current);
   slider.oninput = () => {
-    updateSizeLabel(uiSizeFromIndex(slider.value));
+    updateSizeMarks(uiSizeFromIndex(slider.value));
   };
   const applySize = () => {
     const size = uiSizeFromIndex(slider.value);
-    updateSizeLabel(size);
+    updateSizeMarks(size);
     if (size === (state.profile?.uiSize || 'normal')) return;
     window.deco.saveProfile({ uiSize: size }).then((profile) => {
       state.profile = profile;
+      requestAnimationFrame(() => fitChatWindow());
     }).catch(() => {});
   };
   slider.onchange = applySize;

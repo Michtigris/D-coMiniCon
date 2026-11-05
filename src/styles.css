@@ -1,4 +1,5 @@
 :root {
+  --ui-scale: 1;
   --void: #eef3f8;
   --panel: #ffffff;
   --raised: #f7fafc;
@@ -22,6 +23,14 @@ body {
   background: transparent;
   overflow: hidden;
   user-select: none;
+}
+/* Scale toute l’UI — fenêtre Electron = taille visuelle (BASE×--ui-scale). */
+body[data-view="chat"] #app,
+body[data-view="bar"] #app {
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
 }
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -519,26 +528,101 @@ input:focus {
 }
 .settings {
   position: absolute;
-  inset: 36px 6px 6px;
+  inset: 36px 8px 8px;
   z-index: 5;
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.96));
+  border: 1px solid rgba(197, 208, 220, 0.9);
   border-radius: 0;
-  padding: 8px;
+  padding: 12px 12px 10px;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  box-shadow: 0 10px 28px rgba(42, 51, 64, 0.12);
+  gap: 0;
+  box-shadow: 0 12px 28px rgba(42, 51, 64, 0.1);
 }
 .settings[hidden] {
   display: none !important;
+}
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.settings .field > span {
+  font-family: Fredoka, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--magenta);
+}
+.settings .field input[type="text"],
+.settings .field input:not([type]),
+.settings .field input[type="url"],
+.settings input[name="pseudo"],
+.settings input[name="openCombo"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(197, 208, 220, 0.95);
+  background: #fff;
+  color: var(--text);
+  font-family: Nunito, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.settings .field input:focus {
+  border-color: var(--cyan);
+  box-shadow: var(--glow-cyan);
+}
+.settings .hint {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.settings .hint.is-error { color: var(--red); }
+.settings-nav,
+.settings-back,
+.settings-link {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border: 1px solid rgba(58, 143, 158, 0.28);
+  background: rgba(58, 143, 158, 0.08);
+  color: var(--cyan);
+  font-family: Fredoka, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 8px 10px;
+}
+.settings-back {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  padding: 0 0 4px;
+  width: auto;
+}
+.settings-back:hover { color: var(--cyan); }
+.settings .primary {
+  margin-top: 2px;
+  width: 100%;
 }
 .check { flex-direction: row; align-items: center; color: var(--text); text-transform: none; letter-spacing: 0; }
 .check input { width: auto; clip-path: none; }
 .size-slider {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -546,19 +630,18 @@ input:focus {
   width: 100%;
   accent-color: var(--cyan);
   cursor: pointer;
+  height: 22px;
 }
-.size-slider #size-label {
+.size-marks {
+  display: flex;
+  justify-content: space-between;
   font-family: Fredoka, sans-serif;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--cyan);
-  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
-.settings-nav,
-.settings-back {
-  width: 100%;
-  justify-content: flex-start;
-  text-align: left;
-}
+.size-marks .on { color: var(--cyan); }
 .experimental-master {
   margin: 4px 0 2px;
 }
