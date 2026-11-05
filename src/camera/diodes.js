@@ -76,9 +76,13 @@ export function createDiodeEngine() {
       tickHold(holds.fist, !!(fists?.left && fists?.right), now);
       const diode4 = !!(fists?.left || fists?.right || midLit(holds.fist, now));
 
+      // Mains ouvertes : triangle (diode 1) a la priorité.
       const opens = openSides(seen.landmarks, seen.handedness);
-      tickHold(holds.open, !!(opens?.left && opens?.right), now);
-      const diode5 = !!(opens?.left || opens?.right || midLit(holds.open, now));
+      const openBoth = !!(opens?.left && opens?.right);
+      tickHold(holds.open, openBoth && !diode1, now);
+      const diode5 = diode1
+        ? false
+        : !!(opens?.left || opens?.right || midLit(holds.open, now));
 
       const points = pointSides(seen.landmarks, seen.handedness);
       const indexesTouch = pointedIndexesTouch(seen.landmarks);

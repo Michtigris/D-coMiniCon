@@ -6,9 +6,10 @@ const VISION = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32';
 
 const DIODE_KEYS = ['diode1', 'diode2', 'diode3', 'diode4', 'diode5', 'diode6'];
 
-/** Pose tenue ≥ 300 ms avant tir ; cooldown 5 s par déclencheur (indépendant). */
+/** Pose ≥ 300 ms ; 2 s cooldown global après tout tir ; 5 s sur la même action. */
 const HOLD_MS = 300;
-const COOLDOWN_MS = 5000;
+const GLOBAL_COOLDOWN_MS = 2000;
+const ACTION_COOLDOWN_MS = 5000;
 
 /** Cadence : fluide → chargé (ms entre frames). */
 const WAIT_MIN = 8;
@@ -44,11 +45,12 @@ let holdSince = Object.create(null);
 let firedThisHold = Object.create(null);
 /** @type {Record<string, number>} */
 let coolUntil = Object.create(null);
+let globalCoolUntil = 0;
 
 function resetHoldState() {
   holdSince = Object.create(null);
   firedThisHold = Object.create(null);
-  // coolUntil conservé : le cooldown survit à un yield caméra
+  // coolUntil + globalCoolUntil conservés : survivent à un yield caméra
 }
 
 function masterOn(cfg) {
@@ -240,16 +242,22 @@ async function fireAction(diodeId) {
 }
 
 function stepTriggers(flags, now) {
+  // Triangle > mains ouvertes si les deux matchent.
+  const effective = { ...flags };
+  if (effective.diode1) effective.diode5 = false;
+
   for (const key of DIODE_KEYS) {
     const id = key.slice(5);
-    const on = !!flags[key];
+    const on = !!effective[key];
     if (on) {
       if (!holdSince[id]) holdSince[id] = now;
       const held = now - holdSince[id] >= HOLD_MS;
-      const cooled = now >= (coolUntil[id] || 0);
-      if (held && cooled && !firedThisHold[id]) {
+      const cooledSelf = now >= (coolUntil[id] || 0);
+      const cooledGlobal = now >= globalCoolUntil;
+      if (held && cooledSelf && cooledGlobal && !firedThisHold[id]) {
         firedThisHold[id] = true;
-        coolUntil[id] = now + COOLDOWN_MS;
+        coolUntil[id] = now + ACTION_COOLDOWN_MS;
+        globalCoolUntil = now + GLOBAL_COOLDOWN_MS;
         fireAction(id);
       }
     } else {
