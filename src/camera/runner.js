@@ -6,6 +6,10 @@ const VISION = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32';
 
 const DIODE_KEYS = ['diode1', 'diode2', 'diode3', 'diode4', 'diode5', 'diode6'];
 
+/** Pose tenue ≥ 300 ms avant tir ; cooldown 5 s par déclencheur (indépendant). */
+const HOLD_MS = 300;
+const COOLDOWN_MS = 5000;
+
 /** Cadence : fluide → chargé (ms entre frames). */
 const WAIT_MIN = 8;
 const WAIT_MAX = 120;
@@ -34,6 +38,18 @@ let slowStreak = 0;
 let skipCounter = 0;
 let retryDelay = RETRY_BASE_MS;
 let yielded = false;
+/** @type {Record<string, number>} */
+let holdSince = Object.create(null);
+/** @type {Record<string, boolean>} */
+let firedThisHold = Object.create(null);
+/** @type {Record<string, number>} */
+let coolUntil = Object.create(null);
+
+function resetHoldState() {
+  holdSince = Object.create(null);
+  firedThisHold = Object.create(null);
+  // coolUntil conservé : le cooldown survit à un yield caméra
+}
 
 function masterOn(cfg) {
   return !!(cfg && cfg.enabled);
@@ -104,6 +120,7 @@ function yieldCamera(reason) {
   waitMs = WAIT_MIN;
   slowStreak = 0;
   skipCounter = 0;
+  resetHoldState();
   yielded = true;
   if (shouldRun(config)) scheduleRetry();
   void reason;
@@ -222,6 +239,26 @@ async function fireAction(diodeId) {
   }
 }
 
+function stepTriggers(flags, now) {
+  for (const key of DIODE_KEYS) {
+    const id = key.slice(5);
+    const on = !!flags[key];
+    if (on) {
+      if (!holdSince[id]) holdSince[id] = now;
+      const held = now - holdSince[id] >= HOLD_MS;
+      const cooled = now >= (coolUntil[id] || 0);
+      if (held && cooled && !firedThisHold[id]) {
+        firedThisHold[id] = true;
+        coolUntil[id] = now + COOLDOWN_MS;
+        fireAction(id);
+      }
+    } else {
+      holdSince[id] = 0;
+      firedThisHold[id] = false;
+    }
+  }
+}
+
 function look() {
   if (!running) return;
   const started = performance.now();
@@ -242,12 +279,7 @@ function look() {
       visionClock = Math.max(visionClock + 1, Math.round(performance.now()));
       const result = landmarker.detectForVideo(detectCanvas, visionClock);
       const flags = engine.process(result);
-      for (const key of DIODE_KEYS) {
-        const id = key.slice(5);
-        const on = !!flags[key];
-        const was = !!(prev && prev[key]);
-        if (on && !was) fireAction(id);
-      }
+      stepTriggers(flags, performance.now());
       prev = flags;
     }
   } catch {
@@ -279,6 +311,7 @@ async function startCamera() {
     waitMs = WAIT_MIN;
     slowStreak = 0;
     skipCounter = 0;
+    resetHoldState();
     yielded = false;
     retryDelay = RETRY_BASE_MS;
     running = true;
@@ -315,6 +348,7 @@ function stopCamera() {
   waitMs = WAIT_MIN;
   slowStreak = 0;
   skipCounter = 0;
+  resetHoldState();
   yielded = false;
   retryDelay = RETRY_BASE_MS;
 }

@@ -54,8 +54,10 @@ export function createDiodeEngine() {
       const seen = visibleHands(landmarks, handedness);
       const pose = evaluateHands(seen.landmarks);
 
-      tickHold(holds.triangle, isTriangle(pose), now);
-      const diode1 = midLit(holds.triangle, now);
+      // Diode 1 : pose active tout de suite (le hold 300 ms / cooldown sont dans runner).
+      const triangle = isTriangle(pose);
+      tickHold(holds.triangle, triangle, now);
+      const diode1 = triangle || midLit(holds.triangle, now);
 
       const match = burnMatch(landmarks, burnsOn);
       const shut = landmarks.some(
