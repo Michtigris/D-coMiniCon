@@ -400,8 +400,8 @@ function mountSetup() {
     if (mode === 'register') {
       form.innerHTML = `
         <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
-        <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="XXXXXX" autocomplete="new-password" /></label>
-        <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="Pseudo" autocomplete="nickname" /></label>
+        <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="xxxxxx" autocomplete="new-password" /></label>
+        <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="pseudo" autocomplete="nickname" /></label>
         <p class="error" id="setup-error"></p>
         <div class="setup-actions">
           <button type="submit" class="primary">Créer le compte</button>
@@ -431,7 +431,7 @@ function mountSetup() {
     if (mode === 'forgot') {
       form.innerHTML = `
         <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
-        <label>Nouveau mot de passe <input name="password" type="password" maxlength="64" required placeholder="XXXXXX" autocomplete="new-password" /></label>
+        <label>Nouveau mot de passe <input name="password" type="password" maxlength="64" required placeholder="xxxxxx" autocomplete="new-password" /></label>
         <p class="hint">Réinitialise le compte enregistré sur ce PC.</p>
         <p class="error" id="setup-error"></p>
         <div class="setup-actions">
@@ -460,16 +460,14 @@ function mountSetup() {
 
     form.innerHTML = `
       <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
-      <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="XXXXXX" autocomplete="current-password" /></label>
+      <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="xxxxxx" autocomplete="current-password" /></label>
       <div class="setup-links">
+        <button type="button" class="linkish" id="go-register">Créer</button>
         <button type="button" class="linkish" id="forgot-password">Mot de passe oublié</button>
       </div>
       <p class="error" id="setup-error"></p>
       <div class="setup-actions">
-        <div class="setup-row">
-          <button type="submit" class="primary">OK</button>
-          <button type="button" class="ghost" id="go-register">Créer</button>
-        </div>
+        <button type="submit" class="primary">Enregistrer</button>
       </div>
     `;
     body.replaceChildren(form);

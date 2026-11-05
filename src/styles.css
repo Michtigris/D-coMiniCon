@@ -293,7 +293,9 @@ button:focus-visible,
 }
 .setup-links {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   margin-top: -2px;
 }
 .linkish {
@@ -306,6 +308,18 @@ button:focus-visible,
   cursor: pointer;
 }
 .linkish:hover { color: var(--magenta); }
+.setup input {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.setup input::placeholder {
+  color: var(--muted);
+  opacity: 0.5;
+  text-transform: lowercase;
+  font-weight: 500;
+  letter-spacing: 0;
+}
 .intro, .hint, .empty, .error { margin: 0; color: var(--muted); font-size: 11px; }
 .error { color: var(--red); min-height: 1em; }
 label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
