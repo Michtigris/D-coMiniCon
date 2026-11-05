@@ -314,6 +314,11 @@ async function startCamera() {
     video.srcObject = stream;
     await video.play();
     engine = createDiodeEngine();
+    engine.setHandsMode({
+      3: config?.diodes?.['3']?.hands,
+      4: config?.diodes?.['4']?.hands,
+      5: config?.diodes?.['5']?.hands
+    });
     prev = null;
     visionClock = 0;
     waitMs = WAIT_MIN;
@@ -363,6 +368,13 @@ function stopCamera() {
 
 export function syncCameraActions(next) {
   config = next && typeof next === 'object' ? next : null;
+  if (engine) {
+    engine.setHandsMode({
+      3: config?.diodes?.['3']?.hands,
+      4: config?.diodes?.['4']?.hands,
+      5: config?.diodes?.['5']?.hands
+    });
+  }
   if (shouldRun(config)) {
     if (!running && !starting) {
       startCamera().catch(() => {});

@@ -1596,9 +1596,9 @@ function forceCloseSettings() {
 const CAMERA_DIODES = [
   { id: 1, name: 'Triangle' },
   { id: 2, name: 'Réflexion' },
-  { id: 3, name: 'Pincé' },
-  { id: 4, name: 'Points' },
-  { id: 5, name: 'Mains en l’air' },
+  { id: 3, name: 'Pincé', handsSwitch: true },
+  { id: 4, name: 'Points', handsSwitch: true },
+  { id: 5, name: 'Mains en l’air', handsSwitch: true },
   { id: 6, name: 'UWU' }
 ];
 
@@ -1622,12 +1622,12 @@ function cameraConfig() {
   const base = {
     enabled: false,
     diodes: {
-      1: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
-      2: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
-      3: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
-      4: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
-      5: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' },
-      6: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' }
+      1: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 },
+      2: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 },
+      3: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 },
+      4: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 },
+      5: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 },
+      6: { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 }
     }
   };
   const src = state.profile?.cameraActions;
@@ -1643,7 +1643,8 @@ function cameraConfig() {
       action: ['none', 'shortcut', 'app', 'url'].includes(d.action) ? d.action : 'none',
       shortcut: d.shortcut || 'ctrl+c',
       app: d.app || '',
-      url: d.url || ''
+      url: d.url || '',
+      hands: Number(d.hands) === 1 ? 1 : 2
     };
   }
   return base;
@@ -1729,6 +1730,29 @@ function renderCameraDiodes() {
     title.className = 'camera-diode-title';
     title.textContent = `${meta.id}. ${meta.name}`;
 
+    const headRight = document.createElement('div');
+    headRight.className = 'camera-diode-tools';
+
+    if (meta.handsSwitch) {
+      const hands = document.createElement('div');
+      hands.className = 'hands-switch';
+      hands.setAttribute('role', 'group');
+      hands.setAttribute('aria-label', 'Nombre de mains');
+      for (const n of [1, 2]) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `hands-opt${(diode.hands || 2) === n ? ' on' : ''}`;
+        btn.textContent = String(n);
+        btn.title = n === 1 ? '1 main' : '2 mains';
+        btn.onclick = async () => {
+          await patchCameraDiode(meta.id, { hands: n });
+          renderCameraDiodes();
+        };
+        hands.append(btn);
+      }
+      headRight.append(hands);
+    }
+
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = `power-toggle ${diode.on ? 'on' : 'off'}`;
@@ -1739,7 +1763,8 @@ function renderCameraDiodes() {
       renderCameraDiodes();
     };
 
-    head.append(title, toggle);
+    headRight.append(toggle);
+    head.append(title, headRight);
 
     const action = document.createElement('select');
     action.className = 'camera-action';

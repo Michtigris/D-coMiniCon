@@ -163,7 +163,7 @@ const SHORTCUT_VK = {
 };
 
 function defaultDiode() {
-  return { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '' };
+  return { on: false, action: 'none', shortcut: 'ctrl+c', app: '', url: '', hands: 2 };
 }
 
 function defaultCameraActions() {
@@ -197,7 +197,8 @@ function normalizeCameraActions(raw) {
       action,
       shortcut,
       app: String(d.app || '').slice(0, 120),
-      url: String(d.url || '').slice(0, 500)
+      url: String(d.url || '').slice(0, 500),
+      hands: Number(d.hands) === 1 ? 1 : 2
     };
   }
   return base;

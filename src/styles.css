@@ -671,6 +671,39 @@ input:focus {
   font-weight: 600;
   font-size: 13px;
   color: var(--text);
+  min-width: 0;
+}
+.camera-diode-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hands-switch {
+  display: inline-flex;
+  border: 1px solid rgba(58, 143, 158, 0.35);
+  background: rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+}
+.hands-opt {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: Fredoka, sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hands-opt + .hands-opt {
+  border-left: 1px solid rgba(58, 143, 158, 0.28);
+}
+.hands-opt.on {
+  background: rgba(58, 143, 158, 0.18);
+  color: var(--cyan);
 }
 .camera-action,
 .camera-detail {
