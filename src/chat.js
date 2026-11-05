@@ -387,6 +387,35 @@ function requireNewPassword(password) {
   return value;
 }
 
+const PWD_PLACEHOLDER = '. . . . . . . .';
+
+function passwordFieldHtml({ label = 'Mot de passe', name = 'password', autocomplete = 'current-password' } = {}) {
+  return `
+    <label class="pwd-field">${label}
+      <span class="pwd-wrap">
+        <input name="${name}" type="password" maxlength="64" required placeholder="${PWD_PLACEHOLDER}" autocomplete="${autocomplete}" />
+        <button type="button" class="pwd-toggle" aria-label="Afficher le mot de passe" title="Afficher / masquer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>
+        </button>
+      </span>
+    </label>
+  `;
+}
+
+function bindPasswordToggle(root) {
+  root.querySelectorAll('.pwd-wrap').forEach((wrap) => {
+    const input = wrap.querySelector('input');
+    const btn = wrap.querySelector('.pwd-toggle');
+    if (!input || !btn) return;
+    btn.onclick = () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.classList.toggle('is-on', show);
+      btn.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    };
+  });
+}
+
 function mountSetup() {
   const body = document.getElementById('body');
   const form = document.createElement('form');
@@ -399,9 +428,9 @@ function mountSetup() {
     state.setupMode = mode;
     if (mode === 'register') {
       form.innerHTML = `
-        <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
-        <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="xxxxxx" autocomplete="new-password" /></label>
         <label>Pseudo <input name="pseudo" maxlength="16" required placeholder="pseudo" autocomplete="nickname" /></label>
+        <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
+        ${passwordFieldHtml({ autocomplete: 'new-password' })}
         <p class="error" id="setup-error"></p>
         <div class="setup-actions">
           <button type="submit" class="primary">Créer le compte</button>
@@ -409,6 +438,7 @@ function mountSetup() {
         </div>
       `;
       body.replaceChildren(form);
+      bindPasswordToggle(form);
       form.email.value = prefillEmailValue();
       form.querySelector('#setup-error').textContent = state.setupError || '';
       form.onsubmit = (event) => {
@@ -431,7 +461,7 @@ function mountSetup() {
     if (mode === 'forgot') {
       form.innerHTML = `
         <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
-        <label>Nouveau mot de passe <input name="password" type="password" maxlength="64" required placeholder="xxxxxx" autocomplete="new-password" /></label>
+        ${passwordFieldHtml({ label: 'Nouveau mot de passe', autocomplete: 'new-password' })}
         <p class="hint">Réinitialise le compte enregistré sur ce PC.</p>
         <p class="error" id="setup-error"></p>
         <div class="setup-actions">
@@ -440,6 +470,7 @@ function mountSetup() {
         </div>
       `;
       body.replaceChildren(form);
+      bindPasswordToggle(form);
       form.email.value = prefillEmailValue();
       form.querySelector('#setup-error').textContent = state.setupError || '';
       form.onsubmit = (event) => {
@@ -460,7 +491,7 @@ function mountSetup() {
 
     form.innerHTML = `
       <label>Adresse mail <input name="email" type="email" maxlength="120" required placeholder="toi@mail.com" autocomplete="email" /></label>
-      <label>Mot de passe <input name="password" type="password" maxlength="64" required placeholder="xxxxxx" autocomplete="current-password" /></label>
+      ${passwordFieldHtml({ autocomplete: 'current-password' })}
       <div class="setup-links">
         <button type="button" class="linkish" id="go-register">Créer</button>
         <button type="button" class="linkish" id="forgot-password">Mot de passe oublié</button>
@@ -471,6 +502,7 @@ function mountSetup() {
       </div>
     `;
     body.replaceChildren(form);
+    bindPasswordToggle(form);
     form.email.value = prefillEmailValue();
     form.querySelector('#setup-error').textContent = state.setupError || '';
     form.onsubmit = (event) => {

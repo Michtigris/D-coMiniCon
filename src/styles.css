@@ -316,9 +316,42 @@ button:focus-visible,
 .setup input::placeholder {
   color: var(--muted);
   opacity: 0.5;
-  text-transform: lowercase;
+  text-transform: none;
   font-weight: 500;
   letter-spacing: 0;
+}
+.pwd-wrap {
+  position: relative;
+  display: block;
+}
+.pwd-wrap input {
+  width: 100%;
+  padding-right: 34px;
+}
+.pwd-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  clip-path: none;
+}
+.pwd-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+.pwd-toggle:hover,
+.pwd-toggle.is-on {
+  color: var(--cyan);
 }
 .intro, .hint, .empty, .error { margin: 0; color: var(--muted); font-size: 11px; }
 .error { color: var(--red); min-height: 1em; }
