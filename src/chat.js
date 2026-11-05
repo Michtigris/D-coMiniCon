@@ -1816,7 +1816,7 @@ function renderCameraDiodes() {
       const input = document.createElement('input');
       input.className = 'camera-detail';
       input.type = 'text';
-      input.placeholder = 'Nom de l’appli (ex. notepad, chrome)';
+      input.placeholder = 'Nom menu Démarrer (ChatGPT, Explorateur…)';
       input.value = diode.app || '';
       input.onchange = async () => {
         await patchCameraDiode(meta.id, { app: input.value.trim() });

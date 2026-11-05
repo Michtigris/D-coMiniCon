@@ -242,18 +242,135 @@ function runShortcut(id) {
   return win32.sendChord(vks);
 }
 
+const APP_ALIASES = {
+  dossier: 'explorer',
+  dossiers: 'explorer',
+  fichiers: 'explorer',
+  explorateur: 'explorer',
+  'explorateur de fichiers': 'explorer',
+  'file explorer': 'explorer',
+  explorer: 'explorer',
+  'bloc-notes': 'notepad',
+  blocnotes: 'notepad',
+  notepad: 'notepad',
+  calculatrice: 'calculator',
+  calc: 'calculator',
+  calculator: 'calculator',
+  paint: 'mspaint',
+  cmd: 'cmd',
+  terminal: 'wt',
+  powershell: 'powershell',
+  parametres: 'ms-settings:',
+  paramètres: 'ms-settings:',
+  settings: 'ms-settings:'
+};
+
+function resolveAppQuery(raw) {
+  const query = String(raw || '').trim();
+  if (!query) return '';
+  const key = query
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return APP_ALIASES[key] || APP_ALIASES[query.toLowerCase()] || query;
+}
+
+/** Comme la recherche Windows : Get-StartApps, sinon Start-Process / shell. */
 function openOrFocusApp(name) {
-  const query = String(name || '').trim();
-  if (!query) return Promise.resolve({ ok: false, reason: 'Nom vide' });
+  const raw = String(name || '').trim();
+  if (!raw) return Promise.resolve({ ok: false, reason: 'Nom vide' });
+  const query = resolveAppQuery(raw);
+
   if (win32) {
-    const focused = win32.focusByTitle(query);
-    if (focused.ok) return Promise.resolve({ ok: true, focused: true, title: focused.title });
+    const needles = [...new Set([raw, query].map((s) => String(s || '').trim()).filter(Boolean))];
+    for (const needle of needles) {
+      const focused = win32.focusByTitle(needle);
+      if (focused.ok) return Promise.resolve({ ok: true, focused: true, title: focused.title });
+    }
   }
-  return new Promise((resolve) => {
-    execFile('cmd.exe', ['/c', 'start', '', query], { windowsHide: true }, (err) => {
-      if (err) resolve({ ok: false, reason: err.message || 'Ouverture impossible' });
-      else resolve({ ok: true, focused: false });
+
+  if (query === 'explorer') {
+    return new Promise((resolve) => {
+      execFile('explorer.exe', [], { windowsHide: false }, (err) => {
+        resolve(err ? { ok: false, reason: err.message } : { ok: true, opened: true });
+      });
     });
+  }
+  if (query.startsWith('ms-settings:')) {
+    return shell.openExternal(query).then(() => ({ ok: true, opened: true })).catch((err) => ({
+      ok: false,
+      reason: err.message || 'Paramètres impossible'
+    }));
+  }
+
+  const ps = [
+    "$ErrorActionPreference = 'Continue'",
+    `$query = ${JSON.stringify(query)}`,
+    `$raw = ${JSON.stringify(raw)}`,
+    'function Try-Start([string]$target) {',
+    '  if (-not $target) { return $false }',
+    '  try { Start-Process -FilePath $target | Out-Null; return $true } catch { return $false }',
+    '}',
+    'try {',
+    '  $apps = @(Get-StartApps)',
+    '  foreach ($q in @($query, $raw)) {',
+    '    if (-not $q) { continue }',
+    '    $ql = $q.ToLowerInvariant()',
+    '    $hit = $apps | Where-Object { $_.Name -and ($_.Name.ToLowerInvariant() -eq $ql) } | Select-Object -First 1',
+    '    if (-not $hit) {',
+    '      $hit = $apps | Where-Object { $_.Name -and $_.Name.ToLowerInvariant().Contains($ql) } | Select-Object -First 1',
+    '    }',
+    '    if ($hit -and $hit.AppID) {',
+    '      $appPath = "shell:AppsFolder\\" + $hit.AppID',
+    '      Start-Process -FilePath $appPath | Out-Null',
+    "      Write-Output ('OK|' + $hit.Name)",
+    '      exit 0',
+    '    }',
+    '  }',
+    '} catch {}',
+    'foreach ($q in @($query, $raw)) {',
+    "  if (Try-Start $q) { Write-Output ('OK|' + $q); exit 0 }",
+    '}',
+    'foreach ($q in @($query, $raw)) {',
+    '  try {',
+    "    cmd.exe /c start \"\" \"$q\"",
+    "    Write-Output ('OK|start|' + $q)",
+    '    exit 0',
+    '  } catch {}',
+    '}',
+    "Write-Output 'FAIL'",
+    'exit 1'
+  ].join('\r\n');
+
+  const file = path.join(os.tmpdir(), `decominicon-app-${process.pid}-${Date.now()}.ps1`);
+  try {
+    fs.writeFileSync(file, ps, 'utf8');
+  } catch (err) {
+    return Promise.resolve({ ok: false, reason: err.message || 'Script impossible' });
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', file],
+      { windowsHide: true, timeout: 20000 },
+      (err, stdout) => {
+        try {
+          fs.rmSync(file, { force: true });
+        } catch {
+          // ignore
+        }
+        const out = String(stdout || '').trim();
+        if (out.startsWith('OK|')) {
+          resolve({ ok: true, opened: true, via: out.slice(3) });
+          return;
+        }
+        resolve({
+          ok: false,
+          reason: 'Application introuvable. Utilise le nom exact du menu Démarrer (ex. ChatGPT).'
+        });
+      }
+    );
   });
 }
 
