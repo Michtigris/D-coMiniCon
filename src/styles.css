@@ -354,14 +354,24 @@ button:focus-visible,
   cursor: pointer;
   clip-path: none;
 }
+.pwd-toggle:disabled,
+.pwd-toggle.is-empty {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
 .pwd-toggle svg {
   width: 16px;
   height: 16px;
   fill: currentColor;
+  grid-area: 1 / 1;
 }
-.pwd-toggle:hover,
-.pwd-toggle.is-on {
+.pwd-toggle .pwd-eye-off { display: none; }
+.pwd-toggle.is-on .pwd-eye { display: none; }
+.pwd-toggle.is-on .pwd-eye-off { display: block; }
+.pwd-toggle:hover:not(:disabled):not(.is-empty),
+.pwd-toggle.is-on:not(:disabled) {
   color: var(--cyan);
+  opacity: 1;
 }
 .intro, .hint, .empty, .error { margin: 0; color: var(--muted); font-size: 12px; }
 .error { color: var(--red); min-height: 1em; }

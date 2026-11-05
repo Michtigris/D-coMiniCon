@@ -386,14 +386,16 @@ function requireNewPassword(password) {
 }
 
 const PWD_PLACEHOLDER = '. . . . . . . .';
+const ICON_EYE = '<svg class="pwd-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>';
+const ICON_EYE_OFF = '<svg class="pwd-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.3 2.2 2.2 3.3l3.1 3.1C3.6 7.7 2.2 9.5 1.5 11c.8 1.8 3.2 5.4 6.8 7l-2 2 1.1 1.1 13.4-13.4-1.1-1.1-2.2 2.2C15.2 5.5 13.6 5 12 5c-1.2 0-2.4.3-3.5.8L6.2 3.5 3.3 2.2zM12 7a4 4 0 0 1 3.7 2.5l-1.5 1.5A2 2 0 0 0 12 9a2 2 0 0 0-2 2c0 .4.1.8.3 1.1L8.7 13.7A4 4 0 0 1 12 7zm0 12c5 0 9-4.5 10-7-.5-1.3-1.6-3-3.2-4.4l-1.5 1.5c1.1 1 1.9 2.2 2.3 2.9-1.1 1.8-3.9 5-7.6 5a8.7 8.7 0 0 1-3.3-.6l-1.6 1.6c1.5.7 3.1 1 4.9 1z"/></svg>';
 
 function passwordFieldHtml({ label = 'Mot de passe', name = 'password', autocomplete = 'current-password' } = {}) {
   return `
     <label class="pwd-field">${label}
       <span class="pwd-wrap">
         <input name="${name}" type="password" maxlength="64" required placeholder="${PWD_PLACEHOLDER}" autocomplete="${autocomplete}" />
-        <button type="button" class="pwd-toggle" aria-label="Afficher le mot de passe" title="Afficher / masquer">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>
+        <button type="button" class="pwd-toggle is-empty" aria-label="Afficher le mot de passe" title="Afficher / masquer" disabled>
+          ${ICON_EYE}${ICON_EYE_OFF}
         </button>
       </span>
     </label>
@@ -405,12 +407,25 @@ function bindPasswordToggle(root) {
     const input = wrap.querySelector('input');
     const btn = wrap.querySelector('.pwd-toggle');
     if (!input || !btn) return;
+
+    const sync = () => {
+      const empty = !input.value;
+      const shown = input.type === 'text';
+      btn.classList.toggle('is-empty', empty);
+      btn.classList.toggle('is-on', shown);
+      btn.disabled = empty;
+      btn.setAttribute('aria-label', shown ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+      if (empty && shown) input.type = 'password';
+    };
+
     btn.onclick = () => {
+      if (!input.value) return;
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
-      btn.classList.toggle('is-on', show);
-      btn.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+      sync();
     };
+    input.addEventListener('input', sync);
+    sync();
   });
 }
 
