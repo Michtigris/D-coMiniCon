@@ -6,8 +6,10 @@ const VISION = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32';
 
 const DIODE_KEYS = ['diode1', 'diode2', 'diode3', 'diode4', 'diode5', 'diode6'];
 
-/** Pose ≥ 300 ms ; 2 s cooldown global après tout tir ; 5 s sur la même action. */
-const HOLD_MS = 300;
+/**
+ * Timing diodes (300 ms hold / 3 s lit) = DETECTOR.
+ * Ici : front montant → action, puis 2 s global + 5 s par déclencheur.
+ */
 const GLOBAL_COOLDOWN_MS = 2000;
 const ACTION_COOLDOWN_MS = 5000;
 
@@ -39,17 +41,14 @@ let slowStreak = 0;
 let skipCounter = 0;
 let retryDelay = RETRY_BASE_MS;
 let yielded = false;
-/** @type {Record<string, number>} */
-let holdSince = Object.create(null);
 /** @type {Record<string, boolean>} */
-let firedThisHold = Object.create(null);
+let prevFlags = Object.create(null);
 /** @type {Record<string, number>} */
 let coolUntil = Object.create(null);
 let globalCoolUntil = 0;
 
 function resetHoldState() {
-  holdSince = Object.create(null);
-  firedThisHold = Object.create(null);
+  prevFlags = Object.create(null);
   // coolUntil + globalCoolUntil conservés : survivent à un yield caméra
 }
 
@@ -242,28 +241,23 @@ async function fireAction(diodeId) {
 }
 
 function stepTriggers(flags, now) {
-  // Triangle > mains ouvertes si les deux matchent.
+  // Triangle > mains ouvertes (déjà filtré dans diodes, ceinture).
   const effective = { ...flags };
   if (effective.diode1) effective.diode5 = false;
 
   for (const key of DIODE_KEYS) {
     const id = key.slice(5);
     const on = !!effective[key];
-    if (on) {
-      if (!holdSince[id]) holdSince[id] = now;
-      const held = now - holdSince[id] >= HOLD_MS;
-      const cooledSelf = now >= (coolUntil[id] || 0);
-      const cooledGlobal = now >= globalCoolUntil;
-      if (held && cooledSelf && cooledGlobal && !firedThisHold[id]) {
-        firedThisHold[id] = true;
-        coolUntil[id] = now + ACTION_COOLDOWN_MS;
-        globalCoolUntil = now + GLOBAL_COOLDOWN_MS;
-        fireAction(id);
-      }
-    } else {
-      holdSince[id] = 0;
-      firedThisHold[id] = false;
+    const was = !!prevFlags[id];
+    const cooledSelf = now >= (coolUntil[id] || 0);
+    const cooledGlobal = now >= globalCoolUntil;
+    // Front montant uniquement (le hold 300 ms est déjà dans diodes = DETECTOR).
+    if (on && !was && cooledSelf && cooledGlobal) {
+      coolUntil[id] = now + ACTION_COOLDOWN_MS;
+      globalCoolUntil = now + GLOBAL_COOLDOWN_MS;
+      fireAction(id);
     }
+    prevFlags[id] = on;
   }
 }
 
@@ -288,7 +282,7 @@ function look() {
       const result = landmarker.detectForVideo(detectCanvas, visionClock);
       const flags = engine.process(result);
       stepTriggers(flags, performance.now());
-      prev = flags;
+      prev = flags; // debug / futur
     }
   } catch {
     yieldCamera('detect-error');

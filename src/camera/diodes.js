@@ -1,9 +1,15 @@
+/**
+ * Branchement fidèle des 6 diodes DETECTOR (js/app.js + js/detect.js).
+ * Seuils / gestes = detect.js uniquement (aucun recalcul).
+ *
+ * handsMode 1|2 (diodes 3–5) :
+ *  - 1 = gauche OU droite (côtés DETECTOR), après 300 ms de maintien
+ *  - 2 = les deux côtés (pinch-both / fist-both / open-both)
+ */
 import {
   burnMatch,
   evaluateHands,
   fistSides,
-  handHalfShut,
-  handSpan,
   isTriangle,
   openSides,
   pinchSides,
@@ -17,53 +23,73 @@ const LIT_MS = 3000;
 const HANDS_FLEX = new Set([3, 4, 5]);
 
 function createHold() {
-  return { since: 0, fired: false, litUntil: 0 };
+  return { since: 0, fired: false };
 }
 
-function midLit(hold, now) {
-  return now < hold.litUntil;
-}
-
-function tickHold(hold, active, now) {
+/** watchBoth / watchTriangle / watchPointBoth (DETECTOR app.js) */
+function watchHold(state, active, now) {
   if (active) {
-    if (!hold.since) hold.since = now;
-    if (!hold.fired && now - hold.since >= HOLD_MS) {
-      hold.fired = true;
-      hold.litUntil = now + LIT_MS;
+    if (!state.since) state.since = now;
+    if (!state.fired && now - state.since >= HOLD_MS) {
+      state.fired = true;
+      return true;
     }
-    return;
+    return false;
   }
-  hold.since = 0;
-  hold.fired = false;
+  state.since = 0;
+  state.fired = false;
+  return false;
+}
+
+/** Côté tenu 300 ms d’affilée (anti faux-positif une main). */
+function sideHeld(state, active, now) {
+  if (active) {
+    if (!state.since) state.since = now;
+    return now - state.since >= HOLD_MS;
+  }
+  state.since = 0;
+  return false;
 }
 
 function off() {
   return { diode1: false, diode2: false, diode3: false, diode4: false, diode5: false, diode6: false };
 }
 
-function handsOf(modes, id) {
-  return modes[id] === 1 ? 1 : 2;
-}
-
-function sideDiode(hold, sides, mode, now, extraBoth = true) {
-  const both = !!(sides?.left && sides?.right && extraBoth);
-  tickHold(hold, both, now);
-  if (mode === 1) {
-    return !!(sides?.left || sides?.right || midLit(hold, now));
-  }
-  return midLit(hold, now);
-}
-
 export function createDiodeEngine() {
-  const holds = {
+  const bothHold = {
     triangle: createHold(),
     pinch: createHold(),
     fist: createHold(),
     open: createHold(),
     point: createHold()
   };
-  let burnsOn = false;
+  const sideHold = {
+    3: createHold(),
+    4: createHold(),
+    5: createHold(),
+    6: createHold()
+  };
+  const litUntil = { 1: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  let burnsArmed = false;
   let handsMode = { 3: 2, 4: 2, 5: 2 };
+
+  function modeOf(id) {
+    return handsMode[id] === 1 ? 1 : 2;
+  }
+
+  function groupDiode(id, sides, holdKey, now, bothExtra = true) {
+    const both = !!(sides?.left && sides?.right && bothExtra);
+    if (watchHold(bothHold[holdKey], both, now)) {
+      litUntil[id] = now + LIT_MS;
+    }
+    const mid = now < litUntil[id];
+    if (modeOf(id) === 1) {
+      const any = !!(sides?.left || sides?.right);
+      const side = sideHeld(sideHold[id], any, now);
+      return !!(side || mid);
+    }
+    return mid;
+  }
 
   return {
     setHandsMode(map) {
@@ -75,103 +101,84 @@ export function createDiodeEngine() {
       }
       handsMode = next;
     },
+
     process(result) {
       const now = performance.now();
       const landmarks = result?.landmarks || [];
       const handedness = result?.handedness || [];
+      // DETECTOR look() :
+      // const seen = visibleHands(result.landmarks, result.handedness);
+      // const pose = evaluateHands(seen.landmarks);
       const seen = visibleHands(landmarks, handedness);
-      const n = seen.landmarks?.length || 0;
 
-      if (n < 1) {
-        for (const hold of Object.values(holds)) {
+      if (!seen.landmarks?.length) {
+        for (const hold of Object.values(bothHold)) {
           hold.since = 0;
           hold.fired = false;
         }
-        burnsOn = false;
+        for (const hold of Object.values(sideHold)) {
+          hold.since = 0;
+        }
+        burnsArmed = false;
         return off();
       }
 
-      const two = n >= 2;
-      const pose = two ? evaluateHands(seen.landmarks) : null;
+      const pose = evaluateHands(seen.landmarks);
 
-      let diode1 = false;
-      if (two) {
-        const triangle = isTriangle(pose);
-        tickHold(holds.triangle, triangle, now);
-        diode1 = triangle || midLit(holds.triangle, now);
-      } else {
-        holds.triangle.since = 0;
-        holds.triangle.fired = false;
+      // Diode 1 — watchTriangle(isTriangle(pose))
+      if (watchHold(bothHold.triangle, isTriangle(pose), now)) {
+        litUntil[1] = now + LIT_MS;
       }
+      const diode1 = now < litUntil[1];
 
-      let diode2 = false;
-      if (two) {
-        const match = burnMatch(landmarks, burnsOn);
-        const shut = landmarks.some(
-          (hand) => hand?.length >= 21 && handSpan(hand) >= 0.08 && handHalfShut(hand)
-        );
-        if (match) burnsOn = true;
-        else if (shut) burnsOn = false;
-        else burnsOn = false;
-        diode2 = burnsOn;
-      } else {
-        burnsOn = false;
-      }
+      // Diode 2 — burnMatch(result.landmarks brut, déjàAllumée)
+      const match = burnMatch(landmarks, burnsArmed);
+      burnsArmed = !!match;
+      const diode2 = burnsArmed;
 
-      const mode3 = handsOf(handsMode, 3);
-      const mode4 = handsOf(handsMode, 4);
-      const mode5 = handsOf(handsMode, 5);
+      // Diode 3 — pinchSides(seen…) + watchBoth("pinch")
+      const pinches = pinchSides(seen.landmarks, seen.handedness);
+      const diode3 = groupDiode(3, pinches, 'pinch', now);
 
-      let diode3 = false;
-      if (n >= mode3) {
-        const pinches = pinchSides(seen.landmarks, seen.handedness);
-        diode3 = sideDiode(holds.pinch, pinches, mode3, now);
-      } else {
-        holds.pinch.since = 0;
-        holds.pinch.fired = false;
-      }
+      // Diode 4 — fistSides + watchBoth("fist")
+      const fists = fistSides(seen.landmarks, seen.handedness);
+      const diode4 = groupDiode(4, fists, 'fist', now);
 
-      let diode4 = false;
-      if (n >= mode4) {
-        const fists = fistSides(seen.landmarks, seen.handedness);
-        diode4 = sideDiode(holds.fist, fists, mode4, now);
-      } else {
-        holds.fist.since = 0;
-        holds.fist.fired = false;
-      }
-
+      // Diode 5 — openSides + watchBoth("open") ; triangle gagne
       let diode5 = false;
-      if (diode1) {
-        holds.open.since = 0;
-        holds.open.fired = false;
-      } else if (n >= mode5) {
+      if (!diode1) {
         const opens = openSides(seen.landmarks, seen.handedness);
-        diode5 = sideDiode(holds.open, opens, mode5, now);
+        diode5 = groupDiode(5, opens, 'open', now);
       } else {
-        holds.open.since = 0;
-        holds.open.fired = false;
+        bothHold.open.since = 0;
+        bothHold.open.fired = false;
+        sideHold[5].since = 0;
       }
 
-      let diode6 = false;
-      if (two) {
-        const points = pointSides(seen.landmarks, seen.handedness);
-        const indexesTouch = pointedIndexesTouch(seen.landmarks);
-        tickHold(holds.point, !!(points?.left && points?.right && indexesTouch), now);
-        diode6 = midLit(holds.point, now);
-      } else {
-        holds.point.since = 0;
-        holds.point.fired = false;
+      // Diode 6 — pointSides + watchPointBoth(…, pointedIndexesTouch)
+      const points = pointSides(seen.landmarks, seen.handedness);
+      const indexesTouch = pointedIndexesTouch(seen.landmarks);
+      const pointBoth = !!(points?.left && points?.right && indexesTouch);
+      if (watchHold(bothHold.point, pointBoth, now)) {
+        litUntil[6] = now + LIT_MS;
       }
+      const pointSide = sideHeld(sideHold[6], !!(points?.left || points?.right), now);
+      const diode6 = !!(pointSide || now < litUntil[6]);
 
       return { diode1, diode2, diode3, diode4, diode5, diode6 };
     },
+
     reset() {
-      for (const hold of Object.values(holds)) {
+      for (const hold of Object.values(bothHold)) {
         hold.since = 0;
         hold.fired = false;
-        hold.litUntil = 0;
       }
-      burnsOn = false;
+      for (const hold of Object.values(sideHold)) {
+        hold.since = 0;
+        hold.fired = false;
+      }
+      for (const key of Object.keys(litUntil)) litUntil[key] = 0;
+      burnsArmed = false;
     }
   };
 }
