@@ -8,7 +8,8 @@ const CHANNELS = new Set([
   'update:status',
   'chat:refit',
   'ui:scale',
-  'bar:status-side'
+  'bar:status-side',
+  'decoy:hotkey'
 ]);
 
 contextBridge.exposeInMainWorld('deco', {
@@ -40,6 +41,14 @@ contextBridge.exposeInMainWorld('deco', {
   cameraShortcut: (id) => ipcRenderer.invoke('camera:shortcut', id),
   cameraOpenApp: (name) => ipcRenderer.invoke('camera:open-app', name),
   cameraOpenUrl: (url) => ipcRenderer.invoke('camera:open-url', url),
+  decoyProbeDrivers: () => ipcRenderer.invoke('decoy:probe-drivers'),
+  decoyPushFrame: (payload) => ipcRenderer.invoke('decoy:push-frame', payload),
+  decoyStopVirtual: () => ipcRenderer.invoke('decoy:stop-virtual'),
+  decoyList: () => ipcRenderer.invoke('decoy:list'),
+  decoySave: (payload) => ipcRenderer.invoke('decoy:save', payload),
+  decoyRename: (id, name) => ipcRenderer.invoke('decoy:rename', id, name),
+  decoyDelete: (id) => ipcRenderer.invoke('decoy:delete', id),
+  decoyRead: (id) => ipcRenderer.invoke('decoy:read', id),
   on: (channel, callback) => {
     if (!CHANNELS.has(channel)) return () => {};
     const listener = (_event, data) => callback(data);

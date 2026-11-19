@@ -2,7 +2,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
-const { app, BrowserWindow, Tray, Menu, Notification, clipboard, ipcMain, screen, session, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, clipboard, ipcMain, screen, session, nativeImage, shell, globalShortcut } = require('electron');
+const decoyVirtual = require('./decoy-virtual');
 
 app.setName('DécoMiniCon');
 app.setAppUserModelId('fr.decominicon.app');
@@ -204,6 +205,38 @@ function normalizeCameraActions(raw) {
   return base;
 }
 
+function defaultMyDecoy() {
+  return {
+    enabled: false,
+    recordSeconds: 90,
+    transitionMs: 1400,
+    speechFilter: true,
+    hotkey: 'F9',
+    maxSpeechRatio: 0.35,
+    activeCapsuleId: null,
+    videoDeviceId: '',
+    audioDeviceId: '',
+    audioSinkId: ''
+  };
+}
+
+function normalizeMyDecoy(raw) {
+  const base = defaultMyDecoy();
+  const src = raw && typeof raw === 'object' ? raw : {};
+  base.enabled = !!src.enabled;
+  base.recordSeconds = Math.max(15, Math.min(180, Number(src.recordSeconds) || 90));
+  base.transitionMs = Math.max(400, Math.min(2800, Number(src.transitionMs) || 1400));
+  base.speechFilter = src.speechFilter !== false;
+  const hk = String(src.hotkey || 'F9').toUpperCase();
+  base.hotkey = /^(F[5-9]|F1[0-2]|Control\+Shift\+[A-Z])$/.test(hk) ? hk : 'F9';
+  base.maxSpeechRatio = Math.max(0.05, Math.min(0.9, Number(src.maxSpeechRatio) || 0.35));
+  base.activeCapsuleId = src.activeCapsuleId ? String(src.activeCapsuleId).slice(0, 80) : null;
+  base.videoDeviceId = String(src.videoDeviceId || '').slice(0, 200);
+  base.audioDeviceId = String(src.audioDeviceId || '').slice(0, 200);
+  base.audioSinkId = String(src.audioSinkId || '').slice(0, 200);
+  return base;
+}
+
 function defaultProfile() {
   return {
     userId: null,
@@ -224,8 +257,52 @@ function defaultProfile() {
     lastPartnerId: null,
     lastView: 'salon',
     seen: {},
-    cameraActions: defaultCameraActions()
+    cameraActions: defaultCameraActions(),
+    myDecoy: defaultMyDecoy()
   };
+}
+
+function decoyRoot() {
+  const dir = path.join(dataRoot(), 'my-decoy');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function decoyIndexFile() {
+  return path.join(decoyRoot(), 'index.json');
+}
+
+function readDecoyIndex() {
+  const rows = readJson(decoyIndexFile(), []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function writeDecoyIndex(rows) {
+  writeJson(decoyIndexFile(), rows);
+}
+
+let decoyHotkeyRegistered = '';
+
+function applyDecoyHotkey() {
+  const hk = normalizeMyDecoy(profile?.myDecoy).hotkey || 'F9';
+  if (decoyHotkeyRegistered && decoyHotkeyRegistered !== hk) {
+    try {
+      globalShortcut.unregister(decoyHotkeyRegistered);
+    } catch {
+      // ignore
+    }
+    decoyHotkeyRegistered = '';
+  }
+  if (decoyHotkeyRegistered === hk) return;
+  try {
+    const ok = globalShortcut.register(hk, () => {
+      if (chat && !chat.isDestroyed()) chat.webContents.send('decoy:hotkey');
+    });
+    decoyHotkeyRegistered = ok ? hk : '';
+  } catch (err) {
+    decoyHotkeyRegistered = '';
+    console.error('decoy hotkey', err);
+  }
 }
 
 function normalizeUrl(raw) {
@@ -593,8 +670,10 @@ function loadProfile() {
   profile.openCombo = normalizeOpenCombo(profile.openCombo);
   profile.uiSize = normalizeUiSize(profile.uiSize);
   profile.cameraActions = normalizeCameraActions(profile.cameraActions);
+  profile.myDecoy = normalizeMyDecoy(profile.myDecoy);
   chatVisible = profile.chatVisible !== false;
   applyOpenCombo(profile.openCombo);
+  applyDecoyHotkey();
   return profile;
 }
 
@@ -621,8 +700,14 @@ function saveProfile(patch) {
   } else {
     next.cameraActions = normalizeCameraActions(profile?.cameraActions);
   }
+  if (Object.prototype.hasOwnProperty.call(next, 'myDecoy') || patch?.myDecoy != null) {
+    next.myDecoy = normalizeMyDecoy(next.myDecoy);
+  } else {
+    next.myDecoy = normalizeMyDecoy(profile?.myDecoy);
+  }
   profile = next;
   applyOpenCombo(profile.openCombo);
+  applyDecoyHotkey();
   writeJson(profileFile(), profile);
   backupProfile();
   if (normalizeUiSize(profile.uiSize) !== prevSize) applyUiScale();
@@ -1538,6 +1623,71 @@ function registerIpc() {
     clipboard.writeText(String(text || ''));
     return true;
   });
+
+  ipcMain.handle('decoy:probe-drivers', () => decoyVirtual.probeDrivers());
+  ipcMain.handle('decoy:push-frame', (_event, payload) => decoyVirtual.pushFrame(payload || {}));
+  ipcMain.handle('decoy:stop-virtual', () => {
+    decoyVirtual.stop();
+    return true;
+  });
+  ipcMain.handle('decoy:list', () => readDecoyIndex());
+  ipcMain.handle('decoy:save', (_event, payload) => {
+    const name = String(payload?.name || 'Capsule').slice(0, 80);
+    const mime = String(payload?.mime || 'video/webm').slice(0, 80);
+    const id = `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+    const file = path.join(decoyRoot(), `${id}.${ext}`);
+    const raw = payload?.data;
+    const buf = Buffer.isBuffer(raw)
+      ? raw
+      : raw instanceof Uint8Array
+        ? Buffer.from(raw)
+        : Buffer.from(raw?.data || raw || []);
+    fs.writeFileSync(file, buf);
+    const row = {
+      id,
+      name,
+      mime,
+      file: path.basename(file),
+      createdAt: Date.now(),
+      durationMs: Number(payload?.durationMs) || 0,
+      analysis: payload?.analysis || null
+    };
+    const rows = readDecoyIndex();
+    rows.unshift(row);
+    writeDecoyIndex(rows);
+    return row;
+  });
+  ipcMain.handle('decoy:rename', (_event, id, name) => {
+    const rows = readDecoyIndex();
+    const row = rows.find((r) => r.id === id);
+    if (!row) return null;
+    row.name = String(name || row.name).slice(0, 80);
+    writeDecoyIndex(rows);
+    return row;
+  });
+  ipcMain.handle('decoy:delete', (_event, id) => {
+    const rows = readDecoyIndex();
+    const row = rows.find((r) => r.id === id);
+    if (!row) return false;
+    const file = path.join(decoyRoot(), row.file || '');
+    try {
+      if (row.file && fs.existsSync(file)) fs.unlinkSync(file);
+    } catch {
+      // ignore
+    }
+    writeDecoyIndex(rows.filter((r) => r.id !== id));
+    return true;
+  });
+  ipcMain.handle('decoy:read', (_event, id) => {
+    const rows = readDecoyIndex();
+    const row = rows.find((r) => r.id === id);
+    if (!row) return null;
+    const file = path.join(decoyRoot(), row.file || '');
+    if (!fs.existsSync(file)) return null;
+    const data = fs.readFileSync(file);
+    return { ...row, data };
+  });
 }
 
 function allowMedia(_webContents, permission) {
@@ -1597,6 +1747,16 @@ if (gotLock) {
   app.on('will-quit', () => {
     finishDrag();
     stopAngeWatch();
+    try {
+      globalShortcut.unregisterAll();
+    } catch {
+      // ignore
+    }
+    try {
+      decoyVirtual.stop();
+    } catch {
+      // ignore
+    }
     stop().catch(() => {});
   });
 }

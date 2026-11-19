@@ -1,10 +1,12 @@
 import { createSocket } from './net.js';
 import { createRtc } from './rtc.js';
 import { syncCameraActions } from './camera/runner.js';
+import * as decoy from './decoy/engine.js';
 
 const app = document.getElementById('app');
 const state = {
-  settingsPage: 'main', // main | experimental | camera
+  settingsPage: 'main', // main | experimental | camera | decoy
+  decoySnap: null,
   profile: null,
   host: { hosting: false, urls: [] },
   version: '',
@@ -178,11 +180,98 @@ function shell() {
               <span class="power-label">OFF</span>
             </button>
           </div>
-          <button type="button" class="settings-link" id="open-camera-actions">Action caméra</button>
+          <button type="button" class="settings-link" id="open-camera-actions">Camera Scraper</button>
+          <button type="button" class="settings-link" id="open-my-decoy">My Decoy</button>
         </div>
         <div id="settings-page-camera" class="settings-stack" hidden>
           <button type="button" class="settings-back" data-back="experimental">← Retour</button>
           <div id="camera-diodes" class="camera-diodes"></div>
+        </div>
+        <div id="settings-page-decoy" class="settings-stack" hidden>
+          <button type="button" class="settings-back" data-back="experimental">← Retour</button>
+          <div class="camera-diode-head experimental-master">
+            <div class="camera-diode-title" title="Fausse caméra / micro pour Discord">My Decoy</div>
+            <button type="button" class="power-toggle off" id="decoy-master" aria-pressed="false" title="Active la fausse cam + micro pour les apps">
+              <span class="power-knob"></span>
+              <span class="power-label">OFF</span>
+            </button>
+          </div>
+
+          <div class="decoy-flow" aria-hidden="true" title="Toi → DécoMiniCon → Discord">
+            <div class="decoy-flow-node">
+              <svg viewBox="0 0 40 40" width="28" height="28"><circle cx="20" cy="14" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 34c2-8 22-8 24 0" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="28" cy="12" r="3" fill="currentColor" opacity=".35"/></svg>
+              <span>Toi</span>
+            </div>
+            <span class="decoy-flow-arrow">→</span>
+            <div class="decoy-flow-node decoy-flow-mid">
+              <svg viewBox="0 0 40 40" width="28" height="28"><rect x="6" y="10" width="28" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 20h12M20 14v12" stroke="currentColor" stroke-width="2"/></svg>
+              <span>Decoy</span>
+            </div>
+            <span class="decoy-flow-arrow">→</span>
+            <div class="decoy-flow-node">
+              <svg viewBox="0 0 40 40" width="28" height="28"><rect x="8" y="8" width="24" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 32h12" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="17" r="4" fill="currentColor" opacity=".3"/></svg>
+              <span>Apps</span>
+            </div>
+          </div>
+
+          <div class="decoy-preview-wrap">
+            <video id="decoy-preview" class="decoy-preview" playsinline muted title="Ce que Discord voit"></video>
+            <div class="decoy-preview-meta">
+              <span class="decoy-pill" id="decoy-mode" title="État actuel">Off</span>
+              <div class="decoy-vu" title="Niveau micro" aria-hidden="true"><span id="decoy-vu-bar"></span></div>
+            </div>
+          </div>
+
+          <div class="decoy-actions">
+            <button type="button" class="decoy-icon-btn" id="decoy-record" title="Filmer une capsule (1–2 min)">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg>
+              <span>Rec</span>
+            </button>
+            <button type="button" class="decoy-icon-btn decoy-icon-stop" id="decoy-stop-record" hidden title="Stop + sauver la capsule">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>
+              <span>Stop</span>
+            </button>
+            <button type="button" class="decoy-icon-btn" id="decoy-sim" title="Basculer direct ↔ capsule (ou F9)">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <span>Simu</span>
+            </button>
+          </div>
+
+          <div class="decoy-chips" id="decoy-drivers" title="Pilotes pour Discord"></div>
+
+          <details class="decoy-more">
+            <summary title="Réglages optionnels">Options</summary>
+            <div class="decoy-more-body">
+              <label class="decoy-mini" title="Longueur max d’une capsule">
+                <span>Rec</span>
+                <input id="decoy-record-sec" type="number" min="15" max="180" step="5" value="90" />
+                <span>s</span>
+              </label>
+              <label class="decoy-mini" title="Fondu doux entre direct et capsule">
+                <span>Fondu</span>
+                <input id="decoy-transition-ms" type="number" min="400" max="2800" step="100" value="1400" />
+                <span>ms</span>
+              </label>
+              <label class="decoy-mini" title="Touche pour basculer la simu">
+                <span>Touche</span>
+                <select id="decoy-hotkey">
+                  <option value="F9">F9</option>
+                  <option value="F8">F8</option>
+                  <option value="F10">F10</option>
+                  <option value="F11">F11</option>
+                  <option value="Control+Shift+D">Ctrl+Shift+D</option>
+                </select>
+              </label>
+              <label class="decoy-check" title="Retire les phrases des capsules">
+                <input type="checkbox" id="decoy-speech-filter" checked />
+                Sans parole
+              </label>
+            </div>
+          </details>
+
+          <div class="decoy-cap-head" title="Tes prises enregistrées">Capsules</div>
+          <div id="decoy-capsules" class="decoy-capsules"></div>
+          <p class="hint decoy-hint" id="decoy-hint" hidden></p>
         </div>
       </form>
     </div>
@@ -1672,10 +1761,12 @@ function showSettingsPage(page) {
   const main = document.getElementById('settings-page-main');
   const experimental = document.getElementById('settings-page-experimental');
   const camera = document.getElementById('settings-page-camera');
+  const decoyPage = document.getElementById('settings-page-decoy');
   const pages = [
     [main, 'main'],
     [experimental, 'experimental'],
-    [camera, 'camera']
+    [camera, 'camera'],
+    [decoyPage, 'decoy']
   ];
   for (const [el, name] of pages) {
     if (!el) continue;
@@ -1688,6 +1779,12 @@ function showSettingsPage(page) {
   if (form?.pseudo) form.pseudo.required = page === 'main';
   if (page === 'experimental') syncExperimentalMasterUi();
   if (page === 'camera') renderCameraDiodes();
+  if (page === 'decoy') {
+    syncDecoyFormFromProfile();
+    renderDecoyUi();
+    const preview = document.getElementById('decoy-preview');
+    if (preview && decoy.getState().enabled) decoy.bindPreview(preview);
+  }
   fitChatWindow();
 }
 
@@ -1699,6 +1796,10 @@ function bindSettingsNav() {
   const openCam = document.getElementById('open-camera-actions');
   if (openCam) {
     openCam.onclick = () => showSettingsPage('camera');
+  }
+  const openDecoy = document.getElementById('open-my-decoy');
+  if (openDecoy) {
+    openDecoy.onclick = () => showSettingsPage('decoy');
   }
   document.querySelectorAll('.settings-back').forEach((btn) => {
     btn.onclick = () => showSettingsPage(btn.dataset.back || 'main');
@@ -1712,6 +1813,252 @@ function bindSettingsNav() {
       syncCameraActions(state.profile.cameraActions);
       syncExperimentalMasterUi();
     };
+  }
+  bindDecoyControls();
+}
+
+function myDecoyConfig() {
+  const base = {
+    enabled: false,
+    recordSeconds: 90,
+    transitionMs: 1400,
+    speechFilter: true,
+    hotkey: 'F9',
+    maxSpeechRatio: 0.35,
+    activeCapsuleId: null
+  };
+  const src = state.profile?.myDecoy;
+  if (!src || typeof src !== 'object') return base;
+  return {
+    ...base,
+    enabled: !!src.enabled,
+    recordSeconds: Number(src.recordSeconds) || 90,
+    transitionMs: Number(src.transitionMs) || 1400,
+    speechFilter: src.speechFilter !== false,
+    hotkey: src.hotkey || 'F9',
+    maxSpeechRatio: Number(src.maxSpeechRatio) || 0.35,
+    activeCapsuleId: src.activeCapsuleId || null
+  };
+}
+
+async function saveMyDecoyPatch(patch) {
+  const next = { ...myDecoyConfig(), ...patch };
+  state.profile = await window.deco.saveProfile({ myDecoy: next });
+  decoy.applySettings({
+    recordSeconds: next.recordSeconds,
+    transitionMs: next.transitionMs,
+    speechFilter: next.speechFilter,
+    hotkey: next.hotkey,
+    maxSpeechRatio: next.maxSpeechRatio
+  });
+  return next;
+}
+
+function syncDecoyFormFromProfile() {
+  const cfg = myDecoyConfig();
+  const sec = document.getElementById('decoy-record-sec');
+  const tr = document.getElementById('decoy-transition-ms');
+  const hk = document.getElementById('decoy-hotkey');
+  const sf = document.getElementById('decoy-speech-filter');
+  if (sec) sec.value = String(cfg.recordSeconds);
+  if (tr) tr.value = String(cfg.transitionMs);
+  if (hk) hk.value = cfg.hotkey;
+  if (sf) sf.checked = cfg.speechFilter !== false;
+}
+
+function renderDecoyUi() {
+  const snap = state.decoySnap || decoy.getState();
+  const master = document.getElementById('decoy-master');
+  setPowerToggle(master, !!snap.enabled);
+  const mode = document.getElementById('decoy-mode');
+  if (mode) {
+    let label = 'Off';
+    let tip = 'My Decoy éteint';
+    if (snap.recording && snap.mode === 'sim') {
+      label = `Simu · Rec ${Math.round((snap.recordElapsedMs || 0) / 1000)}s`;
+      tip = 'Capsule en cours pendant la simulation';
+    } else if (snap.mode === 'record' || snap.recording) {
+      label = `Rec ${Math.round((snap.recordElapsedMs || 0) / 1000)}s`;
+      tip = 'Enregistrement de ta capsule';
+    } else if (snap.mode === 'sim') {
+      label = 'Simulation';
+      tip = 'Discord voit la capsule';
+    } else if (snap.enabled) {
+      label = 'Direct';
+      tip = 'Discord voit ton vrai flux (via Decoy)';
+    }
+    mode.textContent = label;
+    mode.dataset.mode = snap.enabled ? snap.mode : 'off';
+    mode.title = tip;
+  }
+  const recBtn = document.getElementById('decoy-record');
+  const stopBtn = document.getElementById('decoy-stop-record');
+  if (recBtn) recBtn.hidden = !!snap.recording;
+  if (stopBtn) stopBtn.hidden = !snap.recording;
+  const simBtn = document.getElementById('decoy-sim');
+  if (simBtn) {
+    const on = snap.mode === 'sim';
+    simBtn.classList.toggle('on', on);
+    const label = simBtn.querySelector('span');
+    if (label) label.textContent = on ? 'Live' : 'Simu';
+    simBtn.title = on ? 'Revenir au direct' : 'Passer sur la capsule';
+  }
+  const vu = document.getElementById('decoy-vu-bar');
+  if (vu) vu.style.width = `${Math.min(100, Math.round((snap.micLevel || 0) * 220))}%`;
+  const drivers = document.getElementById('decoy-drivers');
+  if (drivers) {
+    const d = snap.drivers;
+    drivers.replaceChildren();
+    if (d) {
+      const cam = document.createElement('button');
+      cam.type = 'button';
+      cam.className = `decoy-chip${d.obsVirtualCam ? ' ok' : ' warn'}`;
+      cam.textContent = d.obsVirtualCam ? 'Cam OK' : 'Cam ?';
+      cam.title = d.obsVirtualCam
+        ? 'OBS Virtual Camera détectée'
+        : 'Installe OBS → démarre Virtual Camera';
+      const aud = document.createElement('button');
+      aud.type = 'button';
+      aud.className = `decoy-chip${d.vbCable ? ' ok' : ' warn'}`;
+      aud.textContent = d.vbCable ? 'Micro OK' : 'Micro ?';
+      aud.title = d.vbCable
+        ? 'VB-Cable détecté'
+        : 'Installe VB-Audio Cable pour le faux micro';
+      drivers.append(cam, aud);
+    }
+  }
+  const hint = document.getElementById('decoy-hint');
+  if (hint) {
+    const msg = snap.error || '';
+    hint.hidden = !msg;
+    hint.textContent = msg;
+    hint.classList.toggle('is-error', !!snap.error);
+  }
+  renderDecoyCapsules(snap);
+}
+
+function renderDecoyCapsules(snap) {
+  const root = document.getElementById('decoy-capsules');
+  if (!root) return;
+  root.replaceChildren();
+  const list = snap.capsules || [];
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'decoy-empty';
+    empty.innerHTML =
+      '<svg viewBox="0 0 48 32" width="48" height="32" aria-hidden="true"><rect x="4" y="6" width="40" height="22" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="17" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 28h12" stroke="currentColor" stroke-width="2"/></svg><span title="Appuie sur Rec">Vide — appuie Rec</span>';
+    root.append(empty);
+    return;
+  }
+  for (const cap of list) {
+    const row = document.createElement('div');
+    row.className = `decoy-cap${snap.activeCapsuleId === cap.id ? ' on' : ''}`;
+    row.title = snap.activeCapsuleId === cap.id ? 'Capsule active' : 'Choisir cette capsule';
+    const icon = document.createElement('span');
+    icon.className = 'decoy-cap-ico';
+    icon.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+    const title = document.createElement('button');
+    title.type = 'button';
+    title.className = 'decoy-cap-name';
+    title.textContent = cap.name || cap.id;
+    title.title = 'Utiliser';
+    title.onclick = async () => {
+      await decoy.selectCapsule(cap.id);
+      await saveMyDecoyPatch({ activeCapsuleId: cap.id });
+    };
+    const tools = document.createElement('div');
+    tools.className = 'decoy-cap-tools';
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.textContent = '✎';
+    rename.title = 'Renommer';
+    rename.onclick = async () => {
+      const next = window.prompt('Nom', cap.name || '');
+      if (next == null) return;
+      await decoy.renameCapsule(cap.id, next.trim() || cap.name);
+    };
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '×';
+    del.title = 'Supprimer';
+    del.onclick = async () => {
+      if (!window.confirm(`Supprimer « ${cap.name} » ?`)) return;
+      await decoy.deleteCapsule(cap.id);
+    };
+    tools.append(rename, del);
+    row.append(icon, title, tools);
+    root.append(row);
+  }
+}
+
+function bindDecoyControls() {
+  const master = document.getElementById('decoy-master');
+  if (master) {
+    master.onclick = async () => {
+      const cfg = myDecoyConfig();
+      try {
+        if (!cfg.enabled) {
+          decoy.applySettings(cfg);
+          await decoy.enable({ settings: cfg });
+          const preview = document.getElementById('decoy-preview');
+          if (preview) decoy.bindPreview(preview);
+          await saveMyDecoyPatch({ enabled: true });
+          await decoy.refreshDrivers();
+        } else {
+          await decoy.disable();
+          await saveMyDecoyPatch({ enabled: false });
+        }
+      } catch (err) {
+        toast(err?.message || 'My Decoy impossible');
+      }
+      renderDecoyUi();
+    };
+  }
+  const rec = document.getElementById('decoy-record');
+  if (rec) {
+    rec.onclick = async () => {
+      try {
+        await decoy.startRecord();
+      } catch (err) {
+        toast(err?.message || 'Record impossible');
+      }
+      renderDecoyUi();
+    };
+  }
+  const stop = document.getElementById('decoy-stop-record');
+  if (stop) {
+    stop.onclick = async () => {
+      try {
+        await decoy.stopRecord();
+        toast('Capsule enregistrée');
+      } catch (err) {
+        toast(err?.message || 'Arrêt record impossible');
+      }
+      renderDecoyUi();
+    };
+  }
+  const sim = document.getElementById('decoy-sim');
+  if (sim) {
+    sim.onclick = async () => {
+      try {
+        await decoy.toggleSimulation();
+      } catch (err) {
+        toast(err?.message || 'Simulation impossible');
+      }
+      renderDecoyUi();
+    };
+  }
+  const persist = async () => {
+    const sec = Number(document.getElementById('decoy-record-sec')?.value || 90);
+    const tr = Number(document.getElementById('decoy-transition-ms')?.value || 1400);
+    const hk = document.getElementById('decoy-hotkey')?.value || 'F9';
+    const sf = !!document.getElementById('decoy-speech-filter')?.checked;
+    await saveMyDecoyPatch({ recordSeconds: sec, transitionMs: tr, hotkey: hk, speechFilter: sf });
+  };
+  for (const id of ['decoy-record-sec', 'decoy-transition-ms', 'decoy-hotkey', 'decoy-speech-filter']) {
+    const el = document.getElementById(id);
+    if (el) el.onchange = () => persist().catch(() => {});
   }
 }
 
@@ -2031,6 +2378,31 @@ async function init() {
   state.version = await window.deco.version();
   shell();
   syncCameraActions(state.profile?.cameraActions);
+  const decoyCfg = myDecoyConfig();
+  decoy.applySettings(decoyCfg);
+  let lastDecoyUiKey = '';
+  decoy.subscribe((snap) => {
+    state.decoySnap = snap;
+    if (state.settingsPage !== 'decoy') return;
+    const vu = document.getElementById('decoy-vu-bar');
+    if (vu) vu.style.width = `${Math.min(100, Math.round((snap.micLevel || 0) * 220))}%`;
+    const key = `${snap.enabled}|${snap.mode}|${snap.recording}|${snap.activeCapsuleId}|${snap.capsules?.length}|${snap.error}|${snap.statusText}|${snap.virtual?.video}`;
+    if (key !== lastDecoyUiKey) {
+      lastDecoyUiKey = key;
+      renderDecoyUi();
+    } else {
+      const mode = document.getElementById('decoy-mode');
+      if (mode && snap.recording) {
+        mode.textContent = `Mode : Enregistrement ${Math.round((snap.recordElapsedMs || 0) / 1000)}s`;
+      }
+    }
+  });
+  window.deco.on('decoy:hotkey', () => {
+    decoy.toggleSimulation().catch((err) => toast(err?.message || 'Simulation'));
+  });
+  if (decoyCfg.enabled) {
+    decoy.enable({ settings: decoyCfg }).catch(() => {});
+  }
   window.deco.on('notify:click', () => {
     state.browsing = false;
     renderBody();

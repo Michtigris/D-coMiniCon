@@ -1,4 +1,5 @@
 import { createDiodeEngine } from './diodes.js';
+import { isVirtualDeviceLabel, preferredRealDeviceId, realVideoInputs } from '../decoy/devices.js';
 
 const MODEL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
@@ -196,17 +197,28 @@ function bindTrackYield(mediaStream) {
   }
 }
 
-/** Caméra seule — jamais de micro. */
+/** Caméra seule — jamais de micro, jamais de caméra virtuelle My Decoy / OBS. */
 async function openCamera() {
+  const reals = await realVideoInputs();
+  const deviceId = preferredRealDeviceId(reals);
   const attempts = [
+    deviceId
+      ? { video: { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }
+      : null,
     { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
     { video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false },
     { video: true, audio: false }
-  ];
+  ].filter(Boolean);
   let last = null;
   for (const constraints of attempts) {
     try {
-      return await navigator.mediaDevices.getUserMedia(constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const label = stream.getVideoTracks()[0]?.label || '';
+      if (isVirtualDeviceLabel(label)) {
+        for (const t of stream.getTracks()) t.stop();
+        continue;
+      }
+      return stream;
     } catch (err) {
       last = err;
       const name = err?.name || '';

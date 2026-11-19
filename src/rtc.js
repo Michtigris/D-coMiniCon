@@ -1,3 +1,5 @@
+import { isVirtualDeviceLabel, preferredRealDeviceId, realVideoInputs } from './decoy/devices.js';
+
 export function createRtc({ polite, send, onRemote }) {
   let pc = null;
   let local = null;
@@ -31,10 +33,20 @@ export function createRtc({ polite, send, onRemote }) {
 
   async function startCamera() {
     if (local) return local;
+    const reals = await realVideoInputs();
+    const deviceId = preferredRealDeviceId(reals);
     local = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      video: deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+        : { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
       audio: false
     });
+    const label = local.getVideoTracks()[0]?.label || '';
+    if (isVirtualDeviceLabel(label)) {
+      for (const t of local.getTracks()) t.stop();
+      local = null;
+      throw new Error('Caméra virtuelle ignorée — choisis une webcam réelle');
+    }
     const conn = ensure();
     for (const track of local.getTracks()) conn.addTrack(track, local);
     return local;
