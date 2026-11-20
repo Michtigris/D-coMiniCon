@@ -21,6 +21,10 @@ const SLOW_FRAME_MS = 40;
 const HEAVY_FRAME_MS = 70;
 const RETRY_BASE_MS = 4000;
 const RETRY_MAX_MS = 60000;
+/** Partage caméra : regarde ~2 s, puis lâche ~4 s (CodeCapture / Discord / Chrome). */
+const HOLD_MS = 2000;
+const LEND_MS = 4000;
+const BUSY_LEND_MS = 12000;
 
 let landmarker = null;
 let loadPromise = null;
@@ -42,6 +46,7 @@ let slowStreak = 0;
 let skipCounter = 0;
 let retryDelay = RETRY_BASE_MS;
 let yielded = false;
+let holdStarted = 0;
 /** @type {Record<string, boolean>} */
 let prevFlags = Object.create(null);
 /** @type {Record<string, number>} */
@@ -94,12 +99,14 @@ function releaseTracks() {
   }
 }
 
-function scheduleRetry() {
+function scheduleRetry(forcedDelay) {
   clearTimeout(retryTimer);
   retryTimer = 0;
   if (!shouldRun(config)) return;
-  const delay = retryDelay;
-  retryDelay = Math.min(RETRY_MAX_MS, Math.round(retryDelay * 1.6));
+  const delay = forcedDelay != null ? forcedDelay : retryDelay;
+  if (forcedDelay == null) {
+    retryDelay = Math.min(RETRY_MAX_MS, Math.round(retryDelay * 1.6));
+  }
   retryTimer = setTimeout(() => {
     retryTimer = 0;
     if (!shouldRun(config) || running || starting) return;
@@ -122,10 +129,26 @@ function yieldCamera(reason) {
   waitMs = WAIT_MIN;
   slowStreak = 0;
   skipCounter = 0;
+  holdStarted = 0;
   resetHoldState();
   yielded = true;
-  if (shouldRun(config)) scheduleRetry();
-  void reason;
+  if (!shouldRun(config)) return;
+  // Libération volontaire → reprend vite ; caméra occupée → attend plus longtemps
+  if (reason === 'lend') {
+    retryDelay = RETRY_BASE_MS;
+    scheduleRetry(LEND_MS);
+    return;
+  }
+  if (
+    reason === 'NotReadableError' ||
+    reason === 'TrackStartError' ||
+    reason === 'AbortError' ||
+    reason === 'busy'
+  ) {
+    scheduleRetry(BUSY_LEND_MS);
+    return;
+  }
+  scheduleRetry();
 }
 
 function adaptCadence(spent) {
@@ -281,6 +304,11 @@ function look() {
       yieldCamera('device-lost');
       return;
     }
+    // Lâche la caméra régulièrement pour les autres apps (CodeCapture, etc.)
+    if (holdStarted && started - holdStarted >= HOLD_MS) {
+      yieldCamera('lend');
+      return;
+    }
     const skip = shouldSkipFrame();
     if (!skip && video.readyState >= 2 && video.videoWidth && landmarker && engine) {
       const targetWidth = 320;
@@ -333,6 +361,7 @@ async function startCamera() {
     resetHoldState();
     yielded = false;
     retryDelay = RETRY_BASE_MS;
+    holdStarted = performance.now();
     running = true;
     starting = false;
     visionTimer = setTimeout(look, 30);
@@ -348,7 +377,7 @@ async function startCamera() {
       name === 'NotAllowedError' ||
       name === 'SecurityError'
     ) {
-      yieldCamera(name);
+      yieldCamera(name === 'NotReadableError' || name === 'TrackStartError' ? 'busy' : name);
       return;
     }
     yieldCamera('start-failed');
@@ -396,4 +425,9 @@ export function cameraRunning() {
 
 export function cameraYielded() {
   return yielded;
+}
+
+/** Libère tout de suite la webcam (autres apps). */
+export function lendCameraNow() {
+  if (running || starting || stream) yieldCamera('lend');
 }
