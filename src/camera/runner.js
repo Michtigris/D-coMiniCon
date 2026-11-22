@@ -24,7 +24,8 @@ const RETRY_MAX_MS = 60000;
 /** Partage caméra : regarde ~2 s, puis lâche ~4 s (CodeCapture / Discord / Chrome). */
 const HOLD_MS = 2000;
 const LEND_MS = 4000;
-const BUSY_LEND_MS = 12000;
+const BUSY_LEND_MS = 20000;
+const GUM_TIMEOUT_MS = 1200;
 
 let landmarker = null;
 let loadPromise = null;
@@ -220,33 +221,68 @@ function bindTrackYield(mediaStream) {
   }
 }
 
+/** getUserMedia avec timeout — sinon Windows bloque l’UI quand Discord tient la cam. */
+function getUserMediaTimed(constraints, ms = GUM_TIMEOUT_MS) {
+  let timer = 0;
+  let late = false;
+  const gum = navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
+    if (late) {
+      for (const track of stream.getTracks()) {
+        try {
+          track.stop();
+        } catch {
+          // ignore
+        }
+      }
+      const err = new Error('getUserMedia late');
+      err.name = 'AbortError';
+      throw err;
+    }
+    return stream;
+  });
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      late = true;
+      const err = new Error('getUserMedia timeout');
+      err.name = 'AbortError';
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([gum, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** Caméra seule — jamais de micro, jamais de caméra virtuelle My Decoy / OBS. */
 async function openCamera() {
   const reals = await realVideoInputs();
   const deviceId = preferredRealDeviceId(reals);
+  // Une seule tentative courte : si Discord tient la cam, on lâche tout de suite.
   const attempts = [
     deviceId
-      ? { video: { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }
-      : null,
-    { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
-    { video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false },
-    { video: true, audio: false }
-  ].filter(Boolean);
+      ? { video: { deviceId: { ideal: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }
+      : { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false }
+  ];
   let last = null;
   for (const constraints of attempts) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      const label = stream.getVideoTracks()[0]?.label || '';
+      const media = await getUserMediaTimed(constraints, GUM_TIMEOUT_MS);
+      const label = media.getVideoTracks()[0]?.label || '';
       if (isVirtualDeviceLabel(label)) {
-        for (const t of stream.getTracks()) t.stop();
-        continue;
+        for (const t of media.getTracks()) t.stop();
+        const err = new Error('virtual device');
+        err.name = 'NotFoundError';
+        throw err;
       }
-      return stream;
+      return media;
     } catch (err) {
       last = err;
       const name = err?.name || '';
-      if (name === 'NotAllowedError' || name === 'SecurityError') throw err;
-      if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') {
+      if (
+        name === 'NotAllowedError' ||
+        name === 'SecurityError' ||
+        name === 'NotReadableError' ||
+        name === 'TrackStartError' ||
+        name === 'AbortError'
+      ) {
         throw err;
       }
     }
@@ -342,11 +378,12 @@ async function startCamera() {
   retryTimer = 0;
   try {
     ensureDom();
-    await ensureLandmarker();
+    // Cam d’abord (échec rapide si Discord l’a) — MediaPipe seulement si OK
     stream = await openCamera();
     bindTrackYield(stream);
     video.srcObject = stream;
-    await video.play();
+    await video.play().catch(() => {});
+    await ensureLandmarker();
     engine = createDiodeEngine();
     engine.setHandsMode({
       3: config?.diodes?.['3']?.hands,
@@ -377,7 +414,11 @@ async function startCamera() {
       name === 'NotAllowedError' ||
       name === 'SecurityError'
     ) {
-      yieldCamera(name === 'NotReadableError' || name === 'TrackStartError' ? 'busy' : name);
+      yieldCamera(
+        name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError'
+          ? 'busy'
+          : name
+      );
       return;
     }
     yieldCamera('start-failed');

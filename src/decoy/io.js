@@ -19,20 +19,37 @@ export async function openRealAV(opts = {}) {
   const videoId = preferredRealDeviceId(videos, opts.videoDeviceId);
   const audioId = preferredRealDeviceId(audios, opts.audioDeviceId);
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const constraints = {
     video: {
-      deviceId: videoId ? { exact: videoId } : undefined,
+      deviceId: videoId ? { ideal: videoId } : undefined,
       width: { ideal: 1280 },
       height: { ideal: 720 },
       frameRate: { ideal: 30 }
     },
     audio: {
-      deviceId: audioId ? { exact: audioId } : undefined,
+      deviceId: audioId ? { ideal: audioId } : undefined,
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true
     }
+  };
+  // Timeout : si Discord tient déjà la cam, ne pas geler l’UI
+  let late = false;
+  let timer = 0;
+  const gum = navigator.mediaDevices.getUserMedia(constraints).then((s) => {
+    if (late) {
+      for (const t of s.getTracks()) t.stop();
+      throw Object.assign(new Error('Caméra occupée'), { name: 'AbortError' });
+    }
+    return s;
   });
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      late = true;
+      reject(Object.assign(new Error('Caméra occupée (timeout)'), { name: 'AbortError' }));
+    }, 1500);
+  });
+  const stream = await Promise.race([gum, timeout]).finally(() => clearTimeout(timer));
 
   for (const track of stream.getTracks()) {
     track.addEventListener('ended', () => {
