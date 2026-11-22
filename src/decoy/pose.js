@@ -160,9 +160,10 @@ function poseFromFrames(prevData, data, prevCentroid, dtMs) {
 
 export function poseScore(a, b, opts = {}) {
   if (!a || !b) return 1e9;
-  const posW = opts.posW ?? 1.2;
-  const dirW = opts.dirW ?? 0.9;
-  const spdW = opts.spdW ?? 0.35;
+  // Position pèse beaucoup plus : “pas au même endroit” = fail
+  const posW = opts.posW ?? 2.4;
+  const dirW = opts.dirW ?? 0.75;
+  const spdW = opts.spdW ?? 0.25;
   const pos = Math.hypot(a.x - b.x, a.y - b.y);
   const aSp = Math.max(0.05, a.speed || 0);
   const bSp = Math.max(0.05, b.speed || 0);
@@ -172,7 +173,32 @@ export function poseScore(a, b, opts = {}) {
   const bDy = b.dy / bSp;
   const dir = 1 - Math.max(-1, Math.min(1, aDx * bDx + aDy * bDy)); // 0 = même direction
   const spd = Math.abs(Math.log((a.speed + 0.08) / (b.speed + 0.08)));
-  return posW * pos + dirW * dir + spdW * spd;
+  // pénalité dure si trop loin en position
+  const hard = pos > 0.12 ? (pos - 0.12) * 4 : 0;
+  return posW * pos + dirW * dir + spdW * spd + hard;
+}
+
+/** Moyenne de plusieurs poses (échantillon live stable). */
+export function averagePoses(poses) {
+  const list = (poses || []).filter(Boolean);
+  if (!list.length) return null;
+  const out = { x: 0, y: 0, dx: 0, dy: 0, speed: 0, energy: 0 };
+  for (const p of list) {
+    out.x += p.x;
+    out.y += p.y;
+    out.dx += p.dx;
+    out.dy += p.dy;
+    out.speed += p.speed;
+    out.energy += p.energy || 0;
+  }
+  const n = list.length;
+  out.x /= n;
+  out.y /= n;
+  out.dx /= n;
+  out.dy /= n;
+  out.speed /= n;
+  out.energy /= n;
+  return out;
 }
 
 export function speedRatio(liveSpeed, segSpeed) {

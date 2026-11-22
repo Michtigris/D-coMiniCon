@@ -88,7 +88,7 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
     if (ms != null) setDuration(ms);
     // durée plus courte si poses alignées
     if (ms == null) {
-      const fitMs = 500 + (1 - poseFit) * 900;
+      const fitMs = 180 + (1 - poseFit) * 420;
       setDuration(fitMs);
     }
     const current = mode === 'xfade' ? to : mode;
@@ -108,9 +108,25 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
       emit();
       return;
     }
+    // très bon match → cut quasi net
+    if (poseFit >= 0.72 && (ms == null || ms <= 160)) {
+      cut(to);
+      return;
+    }
     mode = 'xfade';
     progress = 0;
     startedAt = performance.now();
+    emit();
+  }
+
+  /** Bascule instantanée (ou quasi) — pour la fin de pont Synth→Live. */
+  function cut(target) {
+    to = target === 'sim' ? 'sim' : 'live';
+    from = to;
+    mode = to;
+    progress = 1;
+    liveGain = to === 'live' ? 1 : 0;
+    simGain = to === 'sim' ? 1 : 0;
     emit();
   }
 
@@ -201,6 +217,7 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
     setDuration,
     setPoseFit,
     go,
+    cut,
     toggle,
     tick,
     resize,

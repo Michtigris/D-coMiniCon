@@ -2,7 +2,7 @@ import { analyzeCapsuleBlob, findBestBridge, findBestEntry } from './analyze.js'
 import * as capsulesApi from './capsules.js';
 import { openRealAV, probeVirtualDrivers, stopStream } from './io.js';
 import { createLoopPlayer } from './loop.js';
-import { createPoseSampler } from './pose.js';
+import { averagePoses, createPoseSampler } from './pose.js';
 import { createRecorder } from './recorder.js';
 import { createTransitionMixer } from './transition.js';
 import { createVirtualOutput } from './virtual.js';
@@ -376,13 +376,24 @@ function sampleLiveNow() {
   );
 }
 
+async function sampleLiveStable() {
+  livePoseSampler.reset();
+  const samples = [];
+  for (let i = 0; i < 6; i += 1) {
+    samples.push(sampleLiveNow());
+    await sleep(40);
+  }
+  return averagePoses(samples) || sampleLiveNow();
+}
+
 export async function startSimulation(capsuleId, opts = {}) {
   if (!state.enabled) throw new Error('My Decoy inactif');
   const preferred = capsuleId || state.activeCapsuleId;
   if (!preferred && !(state.capsules || []).length) throw new Error('Aucune capsule');
 
   virtualOut.attachLiveStream(live.stream);
-  const livePose = sampleLiveNow();
+  // Pose live stabilisée (sinon match sur une frame foireuse)
+  const livePose = await sampleLiveStable();
   const library = await buildLibrary(preferred);
   if (!library.length) throw new Error('Capsule introuvable');
 
@@ -390,8 +401,9 @@ export async function startSimulation(capsuleId, opts = {}) {
     capsuleId: library[0].id,
     seg: library[0].analysis.segments[0],
     reverse: false,
+    t: library[0].analysis.segments[0]?.start || 0,
     rate: 1,
-    score: 1
+    score: 2
   };
 
   const pack = library.find((p) => p.id === entry.capsuleId) || library[0];
@@ -399,13 +411,17 @@ export async function startSimulation(capsuleId, opts = {}) {
   mixer.setPoseFit(entry.score);
   const player = ensureLoopPlayer();
   await player.load(pack.blob, pack.analysis);
-  player.setEntry({ seg: entry.seg, reverse: entry.reverse, rate: entry.rate });
+
+  // Seek sur la bonne frame AVANT d’afficher la simu
+  const hint = { seg: entry.seg, reverse: entry.reverse, rate: entry.rate, t: entry.t };
+  await player.prepareEntry(hint);
   await player.play();
 
-  // fondu court si bon match position/direction
-  const fit = Math.max(0, Math.min(1, 1 - (entry.score || 1) / 1.8));
-  const ms = opts.soft ? 420 + (1 - fit) * 500 : 380 + (1 - fit) * 700;
-  mixer.go('sim', ms);
+  const fit = Math.max(0, Math.min(1, 1 - (entry.score || 1) / 1.6));
+  // bon match → cut / ultra court ; mauvais → un peu plus long mais toujours serré
+  const ms = fit >= 0.7 ? 90 : fit >= 0.45 ? 160 : 260;
+  if (fit >= 0.7) mixer.cut('sim');
+  else mixer.go('sim', opts.soft ? Math.min(200, ms) : ms);
   state.mode = 'sim';
   state.statusText = state.recording ? 'Simu + enregistrement' : 'Simulation';
   emit();
@@ -415,7 +431,7 @@ export async function stopSimulation() {
   if (bridging) return;
   bridging = true;
   try {
-    const livePose = sampleLiveNow();
+    const livePose = await sampleLiveStable();
     const fromPose = loopPlayer?.getCurrentPose?.() || livePose;
     const library = await buildLibrary(state.activeCapsuleId);
     const bridge = findBestBridge(library, fromPose, livePose);
@@ -427,12 +443,11 @@ export async function stopSimulation() {
         await loopPlayer.play();
       }
       loopPlayer.playBridge(bridge);
-      // laisse le pont jouer un peu puis fondu vers live
-      const bridgeMs = Math.max(420, Math.min(1400, (bridge.seg.end - bridge.seg.start) * 1000 * 0.85));
-      await sleep(Math.min(bridgeMs, 900));
+      // laisse le pont aller jusqu’à la pose live, puis CUT (pas de fondu visible)
+      const bridgeMs = Math.max(500, Math.min(1600, (bridge.seg.end - bridge.seg.start) * 1000 * 0.92));
+      await sleep(bridgeMs);
     }
-    mixer.go('live', 520 + (1 - (mixer.getState().poseFit || 0.5)) * 400);
-    await sleep(280);
+    mixer.cut('live');
     loopPlayer?.stop();
     state.mode = state.recording ? 'record' : 'live';
     state.statusText = state.recording ? 'Enregistrement' : 'Direct → virtuel';

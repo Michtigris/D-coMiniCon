@@ -71,7 +71,7 @@ export function createLoopPlayer({ onFrame, onAudioLevel, externalAudioCtx, exte
   }
 
   function setEntry(hint) {
-    entryHint = hint; // { seg, reverse, rate }
+    entryHint = hint; // { seg, reverse, rate, t }
   }
 
   function pickFirst() {
@@ -82,12 +82,13 @@ export function createLoopPlayer({ onFrame, onAudioLevel, externalAudioCtx, exte
         seg: h.seg,
         reverse: !!h.reverse,
         rate: clampRate(h.rate || 1),
+        t: Number.isFinite(h.t) ? h.t : null,
         key: `${h.seg.id}:${h.reverse ? 1 : 0}`
       };
     }
     const segs = meta?.segments || [];
     if (!segs.length) return null;
-    return { seg: segs[0], reverse: false, rate: 1, key: `${segs[0].id}:0` };
+    return { seg: segs[0], reverse: false, rate: 1, t: null, key: `${segs[0].id}:0` };
   }
 
   async function play() {
@@ -95,7 +96,7 @@ export function createLoopPlayer({ onFrame, onAudioLevel, externalAudioCtx, exte
     playing = true;
     ensureAudio();
     if (audioCtx.state === 'suspended') await audioCtx.resume();
-    current = pickFirst();
+    if (!current?.seg) current = pickFirst();
     advanceCurrent(true);
     tick();
   }
@@ -117,15 +118,54 @@ export function createLoopPlayer({ onFrame, onAudioLevel, externalAudioCtx, exte
 
     const start = reverse ? seg.end : seg.start;
     const end = reverse ? seg.start : seg.end;
-    segDuration = Math.max(0.2, Math.abs(end - start) / Math.max(0.85, rate));
+    // t exact = frame matchée (live→synt)
+    let seekTo = reverse ? seg.end : seg.start;
+    if (!reverse && Number.isFinite(current.t)) {
+      seekTo = Math.max(seg.start, Math.min(seg.end - 0.05, current.t));
+    }
+    const remain = reverse ? Math.abs(seekTo - seg.start) : Math.abs(seg.end - seekTo);
+    segDuration = Math.max(0.2, remain / Math.max(0.85, rate));
     segStartedAt = performance.now();
     const r = clampRate(rate);
     video.playbackRate = reverse ? 1 : r;
     // Son : jamais reverse, et pas de pitch bizarre → mute si rate hors ~1 ou reverse
     const rateOk = Math.abs(r - 1) < 0.04;
     video.muted = reverse || !rateOk;
-    video.currentTime = reverse ? seg.end : seg.start;
+    video.currentTime = seekTo;
+    current.t = null; // one-shot
     video.play().catch(() => {});
+  }
+
+  /** Seek prêt avant de montrer la simu (évite 1ère frame random). */
+  function prepareEntry(hint) {
+    return new Promise((resolve) => {
+      if (!video || !hint?.seg) {
+        resolve(false);
+        return;
+      }
+      setEntry(hint);
+      current = pickFirst();
+      if (!current) {
+        resolve(false);
+        return;
+      }
+      const seg = current.seg;
+      let seekTo = current.reverse ? seg.end : seg.start;
+      if (!current.reverse && Number.isFinite(hint.t)) {
+        seekTo = Math.max(seg.start, Math.min(seg.end - 0.05, hint.t));
+      }
+      const done = () => {
+        video.removeEventListener('seeked', done);
+        resolve(true);
+      };
+      video.addEventListener('seeked', done);
+      video.currentTime = seekTo;
+      // fallback si déjà pile
+      setTimeout(() => {
+        video.removeEventListener('seeked', done);
+        resolve(true);
+      }, 280);
+    });
   }
 
   function tick() {
@@ -253,6 +293,7 @@ export function createLoopPlayer({ onFrame, onAudioLevel, externalAudioCtx, exte
     stop,
     dispose,
     setEntry,
+    prepareEntry,
     playBridge,
     getCurrentPose,
     get playing() {

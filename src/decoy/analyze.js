@@ -241,29 +241,48 @@ function sliceSeg(seg, start, end) {
 }
 
 /**
- * Trouve le meilleur (capsuleId, segment, reverse, rate) pour matcher une pose live.
- * library: [{ id, analysis, blob? }]
+ * Meilleure entrée : cherche dans la track dense (frame exacte), pas seulement début de segment.
  */
 export function findBestEntry(library, livePose) {
   let best = null;
   let bestScore = 1e9;
   for (const pack of library) {
-    const segs = pack.analysis?.segments || [];
+    const analysis = pack.analysis || {};
+    const segs = analysis.segments || [];
+    const track = analysis.track || [];
+
+    // 1) match sur frames de la track
+    for (const frame of track) {
+      const score = poseScore(livePose, frame);
+      if (score >= bestScore) continue;
+      const seg = segs.find((s) => frame.t >= s.start - 0.02 && frame.t <= s.end + 0.02) || segs[0];
+      if (!seg) continue;
+      bestScore = score;
+      best = {
+        capsuleId: pack.id,
+        seg,
+        reverse: false,
+        t: frame.t,
+        rate: Math.max(0.85, Math.min(1.15, (livePose.speed + 0.08) / (frame.speed + 0.08))),
+        score: bestScore
+      };
+    }
+
+    // 2) reverse-safe : comparer pose miroir
     for (const seg of segs) {
-      for (const reverse of [false, true]) {
-        if (reverse && !seg.reverseSafe) continue;
-        const { start } = segmentEndpoints(seg, reverse);
-        const score = poseScore(livePose, start);
-        if (score < bestScore) {
-          bestScore = score;
-          best = {
-            capsuleId: pack.id,
-            seg,
-            reverse,
-            rate: Math.max(0.85, Math.min(1.15, (livePose.speed + 0.08) / (start.speed + 0.08))),
-            score: bestScore
-          };
-        }
+      if (!seg.reverseSafe) continue;
+      const { start } = segmentEndpoints(seg, true);
+      const score = poseScore(livePose, start);
+      if (score < bestScore) {
+        bestScore = score;
+        best = {
+          capsuleId: pack.id,
+          seg,
+          reverse: true,
+          t: seg.end,
+          rate: Math.max(0.85, Math.min(1.15, (livePose.speed + 0.08) / (start.speed + 0.08))),
+          score: bestScore
+        };
       }
     }
   }
