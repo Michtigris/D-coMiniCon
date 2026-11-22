@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('deco', {
   decoyList: () => ipcRenderer.invoke('decoy:list'),
   decoySave: (payload) => ipcRenderer.invoke('decoy:save', payload),
   decoyRename: (id, name) => ipcRenderer.invoke('decoy:rename', id, name),
+  decoyUpdateAnalysis: (id, analysis) => ipcRenderer.invoke('decoy:update-analysis', id, analysis),
   decoyDelete: (id) => ipcRenderer.invoke('decoy:delete', id),
   decoyRead: (id) => ipcRenderer.invoke('decoy:read', id),
   on: (channel, callback) => {

@@ -1666,6 +1666,14 @@ function registerIpc() {
     writeDecoyIndex(rows);
     return row;
   });
+  ipcMain.handle('decoy:update-analysis', (_event, id, analysis) => {
+    const rows = readDecoyIndex();
+    const row = rows.find((r) => r.id === id);
+    if (!row) return null;
+    row.analysis = analysis || null;
+    writeDecoyIndex(rows);
+    return row;
+  });
   ipcMain.handle('decoy:delete', (_event, id) => {
     const rows = readDecoyIndex();
     const row = rows.find((r) => r.id === id);

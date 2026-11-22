@@ -1,7 +1,8 @@
-import { analyzeCapsuleBlob } from './analyze.js';
+import { analyzeCapsuleBlob, findBestBridge, findBestEntry } from './analyze.js';
 import * as capsulesApi from './capsules.js';
 import { openRealAV, probeVirtualDrivers, stopStream } from './io.js';
 import { createLoopPlayer } from './loop.js';
+import { createPoseSampler } from './pose.js';
 import { createRecorder } from './recorder.js';
 import { createTransitionMixer } from './transition.js';
 import { createVirtualOutput } from './virtual.js';
@@ -51,7 +52,6 @@ function ensureLoopPlayer() {
       mixer.setSimSource(source);
     },
     onAudioLevel: () => {},
-    getTransitionMs: () => state.settings.transitionMs,
     externalAudioCtx: virtualOut.audioContext,
     externalGain: virtualOut.simGainNode
   });
@@ -59,11 +59,13 @@ function ensureLoopPlayer() {
 }
 let simBlobCache = new Map();
 let starting = false;
+const livePoseSampler = createPoseSampler();
+let bridging = false;
 
 function defaultSettings() {
   return {
     recordSeconds: 90,
-    transitionMs: 1400,
+    transitionMs: 900,
     speechFilter: true,
     hotkey: 'F9',
     maxSpeechRatio: 0.35,
@@ -316,49 +318,137 @@ export async function deleteCapsule(id) {
 }
 
 async function loadSim(id) {
-  if (simBlobCache.has(id)) return simBlobCache.get(id);
+  if (simBlobCache.has(id)) {
+    const cached = simBlobCache.get(id);
+    if (cached?.analysis?.version >= 2 && cached.analysis?.segments?.[0]?.x0 != null) return cached;
+  }
   const loaded = await capsulesApi.loadCapsuleBlob(id);
   if (!loaded) throw new Error('Capsule introuvable');
   let analysis = loaded.meta?.analysis;
-  if (!analysis) {
+  const needsRebuild = !analysis || analysis.version < 2 || analysis.segments?.[0]?.x0 == null;
+  if (needsRebuild) {
+    state.statusText = 'Analyse capsule…';
+    emit();
     analysis = await analyzeCapsuleBlob(loaded.blob, {
       speechFilter: state.settings.speechFilter,
       vad: { maxSpeechRatio: state.settings.maxSpeechRatio }
     });
+    // Met à jour l’index disque sans dupliquer le fichier
+    try {
+      await capsulesApi.updateAnalysis(id, analysis);
+    } catch {
+      // cache mémoire suffit pour cette session
+    }
   }
-  const pack = { blob: loaded.blob, analysis };
+  const pack = { id, blob: loaded.blob, analysis };
   simBlobCache.set(id, pack);
   return pack;
 }
 
+async function buildLibrary(preferredId) {
+  const ids = [];
+  if (preferredId) ids.push(preferredId);
+  for (const c of state.capsules || []) {
+    if (!ids.includes(c.id)) ids.push(c.id);
+  }
+  const lib = [];
+  for (const id of ids.slice(0, 8)) {
+    try {
+      lib.push(await loadSim(id));
+    } catch {
+      // skip
+    }
+  }
+  return lib;
+}
+
+function sampleLiveNow() {
+  if (!liveVideoEl) return { x: 0.5, y: 0.45, dx: 0, dy: 0, speed: 0, energy: 0 };
+  return (
+    livePoseSampler.sampleFromSource(liveVideoEl) || {
+      x: 0.5,
+      y: 0.45,
+      dx: 0,
+      dy: 0,
+      speed: 0,
+      energy: 0
+    }
+  );
+}
+
 export async function startSimulation(capsuleId, opts = {}) {
   if (!state.enabled) throw new Error('My Decoy inactif');
-  const id = capsuleId || state.activeCapsuleId;
-  if (!id) throw new Error('Aucune capsule sélectionnée');
-  const pack = await loadSim(id);
-  state.activeCapsuleId = id;
-  // s'assurer que le graphe audio virtuel existe avant de brancher la capsule
+  const preferred = capsuleId || state.activeCapsuleId;
+  if (!preferred && !(state.capsules || []).length) throw new Error('Aucune capsule');
+
   virtualOut.attachLiveStream(live.stream);
+  const livePose = sampleLiveNow();
+  const library = await buildLibrary(preferred);
+  if (!library.length) throw new Error('Capsule introuvable');
+
+  const entry = findBestEntry(library, livePose) || {
+    capsuleId: library[0].id,
+    seg: library[0].analysis.segments[0],
+    reverse: false,
+    rate: 1,
+    score: 1
+  };
+
+  const pack = library.find((p) => p.id === entry.capsuleId) || library[0];
+  state.activeCapsuleId = pack.id;
+  mixer.setPoseFit(entry.score);
   const player = ensureLoopPlayer();
   await player.load(pack.blob, pack.analysis);
+  player.setEntry({ seg: entry.seg, reverse: entry.reverse, rate: entry.rate });
   await player.play();
-  mixer.setDuration(state.settings.transitionMs);
-  mixer.go('sim', opts.soft ? Math.max(700, state.settings.transitionMs * 0.75) : state.settings.transitionMs);
-  state.mode = state.recording ? 'sim' : 'sim';
+
+  // fondu court si bon match position/direction
+  const fit = Math.max(0, Math.min(1, 1 - (entry.score || 1) / 1.8));
+  const ms = opts.soft ? 420 + (1 - fit) * 500 : 380 + (1 - fit) * 700;
+  mixer.go('sim', ms);
+  state.mode = 'sim';
   state.statusText = state.recording ? 'Simu + enregistrement' : 'Simulation';
   emit();
 }
 
 export async function stopSimulation() {
-  mixer.go('live', state.settings.transitionMs);
-  loopPlayer?.stop();
-  state.mode = state.recording ? 'record' : 'live';
-  state.statusText = state.recording ? 'Enregistrement' : 'Direct → virtuel';
-  emit();
+  if (bridging) return;
+  bridging = true;
+  try {
+    const livePose = sampleLiveNow();
+    const fromPose = loopPlayer?.getCurrentPose?.() || livePose;
+    const library = await buildLibrary(state.activeCapsuleId);
+    const bridge = findBestBridge(library, fromPose, livePose);
+    if (bridge && loopPlayer) {
+      mixer.setPoseFit(bridge.score);
+      const pack = library.find((p) => p.id === bridge.capsuleId);
+      if (pack && pack.id !== state.activeCapsuleId) {
+        await loopPlayer.load(pack.blob, pack.analysis);
+        await loopPlayer.play();
+      }
+      loopPlayer.playBridge(bridge);
+      // laisse le pont jouer un peu puis fondu vers live
+      const bridgeMs = Math.max(420, Math.min(1400, (bridge.seg.end - bridge.seg.start) * 1000 * 0.85));
+      await sleep(Math.min(bridgeMs, 900));
+    }
+    mixer.go('live', 520 + (1 - (mixer.getState().poseFit || 0.5)) * 400);
+    await sleep(280);
+    loopPlayer?.stop();
+    state.mode = state.recording ? 'record' : 'live';
+    state.statusText = state.recording ? 'Enregistrement' : 'Direct → virtuel';
+    emit();
+  } finally {
+    bridging = false;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function toggleSimulation() {
   if (!state.enabled) return getState();
+  if (bridging) return getState();
   if (mixer.mode === 'sim' || mixer.getState().to === 'sim') {
     await stopSimulation();
   } else {

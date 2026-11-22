@@ -1,6 +1,7 @@
 /**
- * Transitions quasi invisibles Direct ↔ Simulation.
- * Equal-power crossfade audio + fondu vidéo avec léger flou au milieu.
+ * Transitions Live ↔ Simulation guidées par la pose.
+ * Si les poses sont proches → fondu court + léger blur.
+ * Si éloignées → le moteur doit d’abord caler un pont ; ici on adoucit quand même.
  */
 
 function easeInOutQuint(t) {
@@ -9,10 +10,7 @@ function easeInOutQuint(t) {
 
 function equalPower(t) {
   const a = Math.max(0, Math.min(1, t));
-  return {
-    a: Math.cos(a * 0.5 * Math.PI),
-    b: Math.sin(a * 0.5 * Math.PI)
-  };
+  return { a: Math.cos(a * 0.5 * Math.PI), b: Math.sin(a * 0.5 * Math.PI) };
 }
 
 export function createTransitionMixer({ width = 640, height = 480 } = {}) {
@@ -23,16 +21,17 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
   const blurCanvas = document.createElement('canvas');
   const blurCtx = blurCanvas.getContext('2d');
 
-  let mode = 'live'; // live | sim | xfade
+  let mode = 'live';
   let from = 'live';
   let to = 'live';
   let progress = 1;
-  let durationMs = 1400;
+  let durationMs = 900;
   let startedAt = 0;
   let liveVideo = null;
   let simSource = null;
   let liveGain = 1;
   let simGain = 0;
+  let poseFit = 1; // 0 = mauvais match, 1 = excellent
   let listeners = new Set();
 
   function onChange(fn) {
@@ -58,7 +57,8 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
       progress,
       liveGain,
       simGain,
-      transitioning: mode === 'xfade'
+      transitioning: mode === 'xfade',
+      poseFit
     };
   }
 
@@ -71,11 +71,26 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
   }
 
   function setDuration(ms) {
-    durationMs = Math.max(400, Math.min(2800, Number(ms) || 1400));
+    durationMs = Math.max(280, Math.min(2200, Number(ms) || 900));
+  }
+
+  function setPoseFit(score) {
+    // score poseScore ~0 bon, ~2 mauvais → fit 1..0
+    const s = Number(score);
+    if (!Number.isFinite(s)) {
+      poseFit = 0.5;
+      return;
+    }
+    poseFit = Math.max(0, Math.min(1, 1 - s / 1.8));
   }
 
   function go(target, ms) {
     if (ms != null) setDuration(ms);
+    // durée plus courte si poses alignées
+    if (ms == null) {
+      const fitMs = 500 + (1 - poseFit) * 900;
+      setDuration(fitMs);
+    }
     const current = mode === 'xfade' ? to : mode;
     to = target === 'sim' ? 'sim' : 'live';
     if (current === to && progress >= 1 && mode !== 'xfade') {
@@ -108,7 +123,7 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
     if (!source || alpha < 0.01) return;
     const w = canvas.width;
     const h = canvas.height;
-    if (blurPx > 0.4) {
+    if (blurPx > 0.35) {
       if (blurCanvas.width !== w) blurCanvas.width = w;
       if (blurCanvas.height !== h) blurCanvas.height = h;
       blurCtx.clearRect(0, 0, w, h);
@@ -137,7 +152,7 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
       const t = (performance.now() - startedAt) / durationMs;
       progress = Math.max(0, Math.min(1, t));
       const eased = easeInOutQuint(progress);
-      const gains = equalPower(eased); // a: cos 1→0, b: sin 0→1
+      const gains = equalPower(eased);
       if (to === 'sim') {
         liveGain = gains.a;
         simGain = gains.b;
@@ -157,9 +172,9 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
     ctx.fillStyle = '#0a1218';
     ctx.fillRect(0, 0, w, h);
 
-    // Flou max au milieu du fondu (~6% de la largeur visuelle)
     const mid = mode === 'xfade' ? Math.sin(progress * Math.PI) : 0;
-    const blurPx = mid * Math.max(2, w * 0.012);
+    // moins de blur si bon match pose
+    const blurPx = mid * Math.max(1.2, w * 0.01) * (1.15 - poseFit * 0.7);
 
     if (liveGain >= simGain) {
       drawLayer(liveVideo, liveGain, blurPx * liveGain);
@@ -184,6 +199,7 @@ export function createTransitionMixer({ width = 640, height = 480 } = {}) {
     setLiveVideo,
     setSimSource,
     setDuration,
+    setPoseFit,
     go,
     toggle,
     tick,

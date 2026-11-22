@@ -24,6 +24,11 @@ export async function renameCapsule(id, name) {
   return api().decoyRename(id, String(name || '').slice(0, 80));
 }
 
+export async function updateAnalysis(id, analysis) {
+  if (api().decoyUpdateAnalysis) return api().decoyUpdateAnalysis(id, analysis);
+  return null;
+}
+
 export async function deleteCapsule(id) {
   return api().decoyDelete(id);
 }

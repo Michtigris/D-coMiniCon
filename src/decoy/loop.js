@@ -1,33 +1,34 @@
+import { findNextSegment } from './analyze.js';
+import { segmentEndpoints } from './pose.js';
+
 /**
- * Boucle naturelle : alterne segments, reverse vidéo seulement,
- * raccords soft, rotation d'assemblages anti-répétition.
- * Les zones parole (skipRegions) sont déjà retirées des segments à l'analyse.
+ * Boucle intelligente : enchaîne micro-segments par position/direction,
+ * reverse sélectif, anti-répétition, vitesse vidéo ajustée (audio coupé si rate ≠ 1).
  */
 
-export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, externalAudioCtx, externalGain }) {
+export function createLoopPlayer({ onFrame, onAudioLevel, externalAudioCtx, externalGain }) {
   let video = null;
   let url = null;
   let meta = null;
-  let assemblyIndex = 0;
-  let stepIndex = 0;
   let playing = false;
   let raf = 0;
   let audioCtx = null;
   let gain = null;
-  let sourceNode = null;
   let mediaSource = null;
   let analyser = null;
   let reverseCanvas = null;
   let reverseCtx = null;
-  let lastSegKey = '';
+  let current = null; // { seg, reverse, rate, key }
+  let recentKeys = [];
   let segStartedAt = 0;
   let segDuration = 1;
+  let entryHint = null;
 
   function ensureVideo() {
     if (video) return video;
     video = document.createElement('video');
     video.muted = false;
-    video.volume = 0.0001; // quasi muet localement ; le graphe WebAudio prend le relais
+    video.volume = 0.0001;
     video.playsInline = true;
     video.preload = 'auto';
     return video;
@@ -51,7 +52,7 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
         mediaSource = audioCtx.createMediaElementSource(video);
         mediaSource.connect(gain);
       } catch {
-        // déjà connecté
+        // already
       }
     }
   }
@@ -65,26 +66,28 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
     video.src = url;
     await video.play().catch(() => {});
     video.pause();
-    assemblyIndex = 0;
-    stepIndex = 0;
+    recentKeys = [];
+    current = null;
   }
 
-  function currentAssembly() {
-    const list = meta?.assemblies || [];
-    if (!list.length) return { steps: [{ id: 0, reverse: false }] };
-    return list[assemblyIndex % list.length];
+  function setEntry(hint) {
+    entryHint = hint; // { seg, reverse, rate }
   }
 
-  function currentStep() {
-    const asm = currentAssembly();
-    const steps = asm.steps || [];
-    if (!steps.length) return { id: 0, reverse: false };
-    return steps[stepIndex % steps.length];
-  }
-
-  function segmentFor(step) {
+  function pickFirst() {
+    if (entryHint?.seg) {
+      const h = entryHint;
+      entryHint = null;
+      return {
+        seg: h.seg,
+        reverse: !!h.reverse,
+        rate: clampRate(h.rate || 1),
+        key: `${h.seg.id}:${h.reverse ? 1 : 0}`
+      };
+    }
     const segs = meta?.segments || [];
-    return segs.find((s) => s.id === step.id) || segs[0] || { start: 0, end: meta?.duration || 1, reverseSafe: false };
+    if (!segs.length) return null;
+    return { seg: segs[0], reverse: false, rate: 1, key: `${segs[0].id}:0` };
   }
 
   async function play() {
@@ -92,48 +95,59 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
     playing = true;
     ensureAudio();
     if (audioCtx.state === 'suspended') await audioCtx.resume();
-    advanceSegment(true);
+    current = pickFirst();
+    advanceCurrent(true);
     tick();
   }
 
-  function advanceSegment(force) {
-    const step = currentStep();
-    const seg = segmentFor(step);
-    const key = `${assemblyIndex}:${stepIndex}:${step.id}:${step.reverse}`;
-    if (!force && key === lastSegKey) return;
-    lastSegKey = key;
-    const start = seg.start;
-    const end = seg.end;
-    segDuration = Math.max(0.2, end - start);
+  function clampRate(r) {
+    return Math.max(0.85, Math.min(1.15, Number(r) || 1));
+  }
+
+  function advanceCurrent(force) {
+    if (!current?.seg) {
+      current = pickFirst();
+      if (!current) return;
+    }
+    const { seg, reverse, rate } = current;
+    const key = current.key || `${seg.id}:${reverse ? 1 : 0}`;
+    if (!force && key === recentKeys[recentKeys.length - 1]) return;
+    recentKeys.push(key);
+    if (recentKeys.length > 14) recentKeys.shift();
+
+    const start = reverse ? seg.end : seg.start;
+    const end = reverse ? seg.start : seg.end;
+    segDuration = Math.max(0.2, Math.abs(end - start) / Math.max(0.85, rate));
     segStartedAt = performance.now();
-    video.playbackRate = 1;
-    // Audio jamais reverse : même en reverse vidéo on garde le son forward (volume bas sur reverse)
-    video.muted = !!(step.reverse && seg.reverseSafe);
-    video.currentTime = step.reverse && seg.reverseSafe ? end : start;
+    const r = clampRate(rate);
+    video.playbackRate = reverse ? 1 : r;
+    // Son : jamais reverse, et pas de pitch bizarre → mute si rate hors ~1 ou reverse
+    const rateOk = Math.abs(r - 1) < 0.04;
+    video.muted = reverse || !rateOk;
+    video.currentTime = reverse ? seg.end : seg.start;
     video.play().catch(() => {});
   }
 
   function tick() {
     if (!playing) return;
     raf = requestAnimationFrame(tick);
-    const step = currentStep();
-    const seg = segmentFor(step);
-    const start = seg.start;
-    const end = seg.end;
+    if (!current?.seg) return;
+    const { seg, reverse, rate } = current;
+    const r = clampRate(rate);
     const elapsed = (performance.now() - segStartedAt) / 1000;
-    const reverse = !!(step.reverse && seg.reverseSafe);
 
     if (reverse) {
-      const t = end - elapsed;
-      if (t <= start + 0.02 || video.currentTime <= start + 0.02) {
-        nextStep();
+      const t = seg.end - elapsed;
+      if (t <= seg.start + 0.03) {
+        goNext();
         return;
       }
-      if (Math.abs(video.currentTime - t) > 0.08) video.currentTime = t;
+      if (Math.abs(video.currentTime - t) > 0.1) video.currentTime = Math.max(seg.start, t);
       emitFrame(true);
     } else {
-      if (video.currentTime >= end - 0.04 || elapsed >= segDuration) {
-        nextStep();
+      const need = (seg.end - seg.start) / r;
+      if (video.currentTime >= seg.end - 0.04 || elapsed >= need) {
+        goNext();
         return;
       }
       emitFrame(false);
@@ -149,6 +163,17 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
       }
       onAudioLevel(Math.sqrt(sum / data.length));
     }
+  }
+
+  function goNext() {
+    const segs = meta?.segments || [];
+    const nxt = findNextSegment(segs, current.seg, current.reverse, recentKeys, null);
+    if (!nxt) {
+      current = pickFirst();
+    } else {
+      current = { seg: nxt.seg, reverse: nxt.reverse, rate: nxt.rate || 1, key: nxt.key };
+    }
+    advanceCurrent(true);
   }
 
   function emitFrame(reversed) {
@@ -173,17 +198,29 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
     onFrame(reverseCanvas, 1);
   }
 
-  function nextStep() {
-    const asm = currentAssembly();
-    stepIndex += 1;
-    if (stepIndex >= (asm.steps?.length || 1)) {
-      stepIndex = 0;
-      assemblyIndex = (assemblyIndex + 1) % Math.max(1, meta?.assemblies?.length || 1);
-    }
-    const xfade = typeof getTransitionMs === 'function' ? getTransitionMs() : 400;
-    // petit soft cut via opacity callback handled by transition engine; here just advance
-    void xfade;
-    advanceSegment(true);
+  function getCurrentPose() {
+    if (!current?.seg) return null;
+    const { end } = segmentEndpoints(current.seg, current.reverse);
+    // approx progress
+    const u = Math.max(0, Math.min(1, (performance.now() - segStartedAt) / 1000 / segDuration));
+    return {
+      x: current.seg.x0 + (current.seg.x1 - current.seg.x0) * (current.reverse ? 1 - u : u),
+      y: current.seg.y0 + (current.seg.y1 - current.seg.y0) * (current.reverse ? 1 - u : u),
+      dx: end.dx,
+      dy: end.dy,
+      speed: end.speed
+    };
+  }
+
+  function playBridge(hint) {
+    if (!hint?.seg) return;
+    current = {
+      seg: hint.seg,
+      reverse: !!hint.reverse,
+      rate: clampRate(hint.rate || 1),
+      key: `bridge:${hint.seg.id}:${hint.reverse ? 1 : 0}`
+    };
+    advanceCurrent(true);
   }
 
   function stop() {
@@ -195,7 +232,6 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
     } catch {
       // ignore
     }
-    lastSegKey = '';
   }
 
   function dispose() {
@@ -206,18 +242,24 @@ export function createLoopPlayer({ onFrame, onAudioLevel, getTransitionMs, exter
       video.removeAttribute('src');
       video.load();
     }
-    try {
-      sourceNode?.stop();
-    } catch {
-      // ignore
-    }
-    audioCtx?.close().catch(() => {});
+    mediaSource = null;
+    if (!externalAudioCtx) audioCtx?.close().catch(() => {});
     audioCtx = null;
   }
 
-  function setOutputGain(v) {
-    if (gain) gain.gain.value = Math.max(0, Math.min(1, v));
-  }
-
-  return { load, play, stop, dispose, setOutputGain, get playing() { return playing; } };
+  return {
+    load,
+    play,
+    stop,
+    dispose,
+    setEntry,
+    playBridge,
+    getCurrentPose,
+    get playing() {
+      return playing;
+    },
+    get current() {
+      return current;
+    }
+  };
 }
