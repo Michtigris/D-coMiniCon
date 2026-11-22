@@ -48,6 +48,8 @@ let skipCounter = 0;
 let retryDelay = RETRY_BASE_MS;
 let yielded = false;
 let holdStarted = 0;
+/** My Decoy tient la cam : le scraper ne doit plus ouvrir/lâcher en boucle. */
+let decoyHold = false;
 /** @type {Record<string, boolean>} */
 let prevFlags = Object.create(null);
 /** @type {Record<string, number>} */
@@ -103,14 +105,14 @@ function releaseTracks() {
 function scheduleRetry(forcedDelay) {
   clearTimeout(retryTimer);
   retryTimer = 0;
-  if (!shouldRun(config)) return;
+  if (decoyHold || !shouldRun(config)) return;
   const delay = forcedDelay != null ? forcedDelay : retryDelay;
   if (forcedDelay == null) {
     retryDelay = Math.min(RETRY_MAX_MS, Math.round(retryDelay * 1.6));
   }
   retryTimer = setTimeout(() => {
     retryTimer = 0;
-    if (!shouldRun(config) || running || starting) return;
+    if (decoyHold || !shouldRun(config) || running || starting) return;
     startCamera().catch(() => {
       // reste en yield ; prochain retry déjà planifié via yieldCamera
     });
@@ -371,6 +373,7 @@ function look() {
 }
 
 async function startCamera() {
+  if (decoyHold) return;
   if (running || starting) return;
   if (!shouldRun(config)) return;
   starting = true;
@@ -451,6 +454,10 @@ export function syncCameraActions(next) {
       5: config?.diodes?.['5']?.hands
     });
   }
+  if (decoyHold) {
+    stopCamera();
+    return;
+  }
   if (shouldRun(config)) {
     if (!running && !starting) {
       startCamera().catch(() => {});
@@ -458,6 +465,27 @@ export function syncCameraActions(next) {
   } else {
     stopCamera();
   }
+}
+
+/**
+ * My Decoy ON → stoppe le cycle open/close du scraper (preview noir + LED clignote).
+ * My Decoy OFF → redémarre le scraper si Expérimental est actif.
+ */
+export function setDecoyCameraHold(on) {
+  decoyHold = !!on;
+  if (decoyHold) {
+    clearTimeout(retryTimer);
+    retryTimer = 0;
+    stopCamera();
+    return;
+  }
+  if (shouldRun(config) && !running && !starting) {
+    startCamera().catch(() => {});
+  }
+}
+
+export function isDecoyCameraHold() {
+  return decoyHold;
 }
 
 export function cameraRunning() {

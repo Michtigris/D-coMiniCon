@@ -1,6 +1,6 @@
 import { createSocket } from './net.js';
 import { createRtc } from './rtc.js';
-import { syncCameraActions } from './camera/runner.js';
+import { setDecoyCameraHold, syncCameraActions } from './camera/runner.js';
 import * as decoy from './decoy/engine.js';
 
 const app = document.getElementById('app');
@@ -1783,7 +1783,9 @@ function showSettingsPage(page) {
     syncDecoyFormFromProfile();
     renderDecoyUi();
     const preview = document.getElementById('decoy-preview');
-    if (preview && decoy.getState().enabled) decoy.bindPreview(preview);
+    if (preview && decoy.getState().enabled) {
+      requestAnimationFrame(() => decoy.bindPreview(preview));
+    }
   }
   fitChatWindow();
 }
@@ -1999,14 +2001,24 @@ function bindDecoyControls() {
       const cfg = myDecoyConfig();
       try {
         if (!cfg.enabled) {
+          // Scraper ne doit plus ouvrir/fermer la cam en boucle pendant My Decoy
+          setDecoyCameraHold(true);
           decoy.applySettings(cfg);
-          await decoy.enable({ settings: cfg });
+          try {
+            await decoy.enable({ settings: cfg });
+          } catch (err) {
+            setDecoyCameraHold(false);
+            syncCameraActions(state.profile?.cameraActions);
+            throw err;
+          }
           const preview = document.getElementById('decoy-preview');
           if (preview) decoy.bindPreview(preview);
           await saveMyDecoyPatch({ enabled: true });
           await decoy.refreshDrivers();
         } else {
           await decoy.disable();
+          setDecoyCameraHold(false);
+          syncCameraActions(state.profile?.cameraActions);
           await saveMyDecoyPatch({ enabled: false });
         }
       } catch (err) {
@@ -2401,7 +2413,10 @@ async function init() {
     decoy.toggleSimulation().catch((err) => toast(err?.message || 'Simulation'));
   });
   if (decoyCfg.enabled) {
-    decoy.enable({ settings: decoyCfg }).catch(() => {});
+    setDecoyCameraHold(true);
+    decoy.enable({ settings: decoyCfg }).catch(() => {
+      setDecoyCameraHold(false);
+    });
   }
   window.deco.on('notify:click', () => {
     state.browsing = false;

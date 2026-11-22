@@ -236,9 +236,21 @@ function stopRenderLoop() {
 export function bindPreview(videoEl) {
   previewVideoEl = videoEl;
   if (!videoEl) return;
-  const stream = mixer.canvas.captureStream(30);
-  videoEl.srcObject = stream;
+  // Dimensionne + peint une frame avant captureStream (sinon écran noir)
+  if (liveVideoEl?.videoWidth) {
+    mixer.resize(liveVideoEl.videoWidth, liveVideoEl.videoHeight);
+  } else {
+    mixer.resize(640, 360);
+  }
+  mixer.tick();
+  // Preview fiable : flux live direct (le composite reste pour la sortie virtuelle)
+  if (live?.stream) {
+    videoEl.srcObject = live.stream;
+  } else {
+    videoEl.srcObject = mixer.canvas.captureStream(30);
+  }
   videoEl.muted = true;
+  videoEl.playsInline = true;
   videoEl.play().catch(() => {});
 }
 
