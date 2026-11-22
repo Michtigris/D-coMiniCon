@@ -48,8 +48,8 @@ let skipCounter = 0;
 let retryDelay = RETRY_BASE_MS;
 let yielded = false;
 let holdStarted = 0;
-/** My Decoy tient la cam : le scraper ne doit plus ouvrir/lâcher en boucle. */
-let decoyHold = false;
+/** Flux cam partagé (My Decoy) — on analyse sans ouvrir/stopper la cam. */
+let sharedStream = null;
 /** @type {Record<string, boolean>} */
 let prevFlags = Object.create(null);
 /** @type {Record<string, number>} */
@@ -82,6 +82,18 @@ function clearTimers() {
 }
 
 function releaseTracks() {
+  // Ne jamais stopper un flux appartenant à My Decoy
+  if (sharedStream) {
+    stream = null;
+    if (video) {
+      try {
+        video.srcObject = null;
+      } catch {
+        // ignore
+      }
+    }
+    return;
+  }
   if (stream) {
     for (const track of stream.getTracks()) {
       try {
@@ -105,14 +117,14 @@ function releaseTracks() {
 function scheduleRetry(forcedDelay) {
   clearTimeout(retryTimer);
   retryTimer = 0;
-  if (decoyHold || !shouldRun(config)) return;
+  if (sharedStream || !shouldRun(config)) return;
   const delay = forcedDelay != null ? forcedDelay : retryDelay;
   if (forcedDelay == null) {
     retryDelay = Math.min(RETRY_MAX_MS, Math.round(retryDelay * 1.6));
   }
   retryTimer = setTimeout(() => {
     retryTimer = 0;
-    if (decoyHold || !shouldRun(config) || running || starting) return;
+    if (sharedStream || !shouldRun(config) || running || starting) return;
     startCamera().catch(() => {
       // reste en yield ; prochain retry déjà planifié via yieldCamera
     });
@@ -120,6 +132,18 @@ function scheduleRetry(forcedDelay) {
 }
 
 function yieldCamera(reason) {
+  // En mode partagé : on ne “lend” pas — My Decoy garde la cam ouverte
+  if (sharedStream) {
+    if (reason === 'detect-error' || reason === 'device-lost') {
+      // tente de se recoller au flux partagé
+      running = false;
+      starting = false;
+      clearTimeout(visionTimer);
+      visionTimer = 0;
+      if (shouldRun(config)) startFromShared().catch(() => {});
+    }
+    return;
+  }
   running = false;
   starting = false;
   clearTimeout(visionTimer);
@@ -136,7 +160,6 @@ function yieldCamera(reason) {
   resetHoldState();
   yielded = true;
   if (!shouldRun(config)) return;
-  // Libération volontaire → reprend vite ; caméra occupée → attend plus longtemps
   if (reason === 'lend') {
     retryDelay = RETRY_BASE_MS;
     scheduleRetry(LEND_MS);
@@ -342,8 +365,8 @@ function look() {
       yieldCamera('device-lost');
       return;
     }
-    // Lâche la caméra régulièrement pour les autres apps (CodeCapture, etc.)
-    if (holdStarted && started - holdStarted >= HOLD_MS) {
+    // Lâche la caméra régulièrement SEULEMENT si on l’a ouverte nous-mêmes
+    if (!sharedStream && holdStarted && started - holdStarted >= HOLD_MS) {
       yieldCamera('lend');
       return;
     }
@@ -372,8 +395,46 @@ function look() {
   visionTimer = setTimeout(look, pause);
 }
 
+async function startFromShared() {
+  if (!sharedStream || running || starting) return;
+  if (!shouldRun(config)) return;
+  starting = true;
+  clearTimeout(retryTimer);
+  retryTimer = 0;
+  try {
+    ensureDom();
+    stream = sharedStream;
+    video.srcObject = sharedStream;
+    await video.play().catch(() => {});
+    await ensureLandmarker();
+    engine = createDiodeEngine();
+    engine.setHandsMode({
+      3: config?.diodes?.['3']?.hands,
+      4: config?.diodes?.['4']?.hands,
+      5: config?.diodes?.['5']?.hands
+    });
+    prev = null;
+    visionClock = 0;
+    waitMs = WAIT_MIN;
+    slowStreak = 0;
+    skipCounter = 0;
+    resetHoldState();
+    yielded = false;
+    holdStarted = performance.now();
+    running = true;
+    starting = false;
+    visionTimer = setTimeout(look, 30);
+  } catch {
+    starting = false;
+    running = false;
+  }
+}
+
 async function startCamera() {
-  if (decoyHold) return;
+  if (sharedStream) {
+    await startFromShared();
+    return;
+  }
   if (running || starting) return;
   if (!shouldRun(config)) return;
   starting = true;
@@ -454,10 +515,6 @@ export function syncCameraActions(next) {
       5: config?.diodes?.['5']?.hands
     });
   }
-  if (decoyHold) {
-    stopCamera();
-    return;
-  }
   if (shouldRun(config)) {
     if (!running && !starting) {
       startCamera().catch(() => {});
@@ -468,24 +525,32 @@ export function syncCameraActions(next) {
 }
 
 /**
- * My Decoy ON → stoppe le cycle open/close du scraper (preview noir + LED clignote).
- * My Decoy OFF → redémarre le scraper si Expérimental est actif.
+ * Branche le scraper sur le flux My Decoy (1 seule ouverture cam).
+ * Détection + Decoy live/rec/virtuel en parallèle, sans clignoter.
  */
-export function setDecoyCameraHold(on) {
-  decoyHold = !!on;
-  if (decoyHold) {
-    clearTimeout(retryTimer);
-    retryTimer = 0;
-    stopCamera();
-    return;
-  }
-  if (shouldRun(config) && !running && !starting) {
-    startCamera().catch(() => {});
-  }
+export function attachSharedStream(mediaStream) {
+  clearTimeout(retryTimer);
+  retryTimer = 0;
+  // stoppe notre éventuelle ouverture perso sans toucher au flux partagé
+  const wasShared = sharedStream;
+  sharedStream = null;
+  stopCamera();
+  sharedStream = mediaStream || null;
+  if (!sharedStream) return;
+  if (shouldRun(config)) startFromShared().catch(() => {});
+  void wasShared;
 }
 
-export function isDecoyCameraHold() {
-  return decoyHold;
+export function detachSharedStream() {
+  const had = !!sharedStream;
+  sharedStream = null;
+  stopCamera();
+  if (had && shouldRun(config)) startCamera().catch(() => {});
+}
+
+/** @deprecated alias */
+export function setDecoyCameraHold(on) {
+  if (!on) detachSharedStream();
 }
 
 export function cameraRunning() {

@@ -1,6 +1,6 @@
 import { createSocket } from './net.js';
 import { createRtc } from './rtc.js';
-import { setDecoyCameraHold, syncCameraActions } from './camera/runner.js';
+import { attachSharedStream, detachSharedStream, syncCameraActions } from './camera/runner.js';
 import * as decoy from './decoy/engine.js';
 
 const app = document.getElementById('app');
@@ -2001,23 +2001,24 @@ function bindDecoyControls() {
       const cfg = myDecoyConfig();
       try {
         if (!cfg.enabled) {
-          // Scraper ne doit plus ouvrir/fermer la cam en boucle pendant My Decoy
-          setDecoyCameraHold(true);
           decoy.applySettings(cfg);
           try {
             await decoy.enable({ settings: cfg });
           } catch (err) {
-            setDecoyCameraHold(false);
+            detachSharedStream();
             syncCameraActions(state.profile?.cameraActions);
             throw err;
           }
+          // 1 cam pour Decoy (live/rec/virtuel) + Camera Scraper
+          const shared = decoy.getLiveStream();
+          if (shared) attachSharedStream(shared);
           const preview = document.getElementById('decoy-preview');
           if (preview) decoy.bindPreview(preview);
           await saveMyDecoyPatch({ enabled: true });
           await decoy.refreshDrivers();
         } else {
           await decoy.disable();
-          setDecoyCameraHold(false);
+          detachSharedStream();
           syncCameraActions(state.profile?.cameraActions);
           await saveMyDecoyPatch({ enabled: false });
         }
@@ -2412,11 +2413,20 @@ async function init() {
   window.deco.on('decoy:hotkey', () => {
     decoy.toggleSimulation().catch((err) => toast(err?.message || 'Simulation'));
   });
+  window.__decoyLiveStreamChanged = (stream) => {
+    if (stream) attachSharedStream(stream);
+    else detachSharedStream();
+  };
   if (decoyCfg.enabled) {
-    setDecoyCameraHold(true);
-    decoy.enable({ settings: decoyCfg }).catch(() => {
-      setDecoyCameraHold(false);
-    });
+    decoy
+      .enable({ settings: decoyCfg })
+      .then(() => {
+        const shared = decoy.getLiveStream();
+        if (shared) attachSharedStream(shared);
+      })
+      .catch(() => {
+        detachSharedStream();
+      });
   }
   window.deco.on('notify:click', () => {
     state.browsing = false;

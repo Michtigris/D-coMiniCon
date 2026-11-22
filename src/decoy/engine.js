@@ -233,6 +233,10 @@ function stopRenderLoop() {
   raf = 0;
 }
 
+export function getLiveStream() {
+  return live?.stream || null;
+}
+
 export function bindPreview(videoEl) {
   previewVideoEl = videoEl;
   if (!videoEl) return;
@@ -499,6 +503,13 @@ async function recoverDeviceLoss() {
     mixer.setLiveVideo(liveVideoEl);
     virtualOut.attachLiveStream(live.stream);
     setupLevels(live.stream);
+    // notifier le scraper pour se recoller au nouveau flux
+    try {
+      window.__decoyLiveStreamChanged?.(live.stream);
+    } catch {
+      // ignore
+    }
+    if (previewVideoEl) bindPreview(previewVideoEl);
     state.error = '';
     state.statusText = 'Direct récupéré';
     emit();
